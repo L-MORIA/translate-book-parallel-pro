@@ -2,7 +2,7 @@
 name: translate-book-parallel
 description: Translate books (PDF/DOCX/EPUB) into any language using parallel sub-agents (Hermes delegate_task). Converts input -> Markdown chunks -> translated chunks -> HTML/DOCX/EPUB/PDF.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, execute_code
-metadata: {"hermes":{"requires":{"bins":["python","pandoc","ebook-convert"],"anyBins":["calibre","ebook-convert"]},"homepage":"https://github.com/deusyu/translate-book"}}
+metadata: {"hermes":{"requires":{"bins":["python","pandoc","ebook-convert"],"anyBins":["calibre","ebook-convert"]},"homepage":"https://github.com/L-MORIA/translate-book-parallel"}}
 ---
 
 # Book Translation Skill

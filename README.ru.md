@@ -64,9 +64,14 @@ python -c "import pypandoc; print('pypandoc ok')"
 ```bash
 # 1. Клонировать репозиторий
 git clone https://github.com/L-MORIA/translate-book-parallel.git
+
+# 2. Установить зависимости
+python scripts/setup.py
+
+# 3. Установить скилл в Hermes
 cp -r translate-book-parallel "${HERMES_HOME:-$HOME/.hermes}/skills/translate-book-parallel"
 
-# 2. Перезагрузить скиллы
+# 4. Перезагрузить скиллы
 # Выполнить /reload-skills в чате
 ```
 
