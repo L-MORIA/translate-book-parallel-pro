@@ -139,6 +139,12 @@ python scripts/merge_and_build.py --temp-dir book_temp --title "Название
 
 См. [ARCHITECTURE.md](ARCHITECTURE.md) — диаграмма пайплайна и описание компонентов.
 
+## Известные проблемы
+
+- **Память:** При concurrency >1 на системах с 8GB RAM возможно переполнение памяти.
+  Решение: используйте `concurrency: 1` в конфигурации перевода.
+  См. `scripts/setup.py` — проверка RAM встроена в установку.
+
 ## Что изменено относительно оригинала
 
 См. [CHANGELOG.md](CHANGELOG.md) — полный список адаптаций под Hermes.

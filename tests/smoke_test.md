@@ -1,0 +1,9 @@
+# The Adventures of Sherlock Holmes
+
+## I. A Scandal in Bohemia
+
+To Sherlock Holmes she is always *the* woman. I have seldom heard him mention her under any other name. In his eyes she eclipses and predominates the whole of her sex.
+
+It was not that he felt any emotion akin to love for Irene Adler. All emotions, and that one particularly, were abhorrent to his cold, precise but admirably balanced mind. He was, I take it, the most perfect reasoning and observing machine that the world has seen.
+
+*Example of what the translator produces (see output_sample.md for the Russian result).*

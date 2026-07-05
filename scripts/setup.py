@@ -8,6 +8,28 @@ Run: python scripts/setup.py
 
 import subprocess, sys, os, platform
 
+def check_ram():
+    """Check available RAM — warn if below safe threshold for parallel translation."""
+    try:
+        if platform.system() == "Windows":
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            mem = ctypes.c_ulonglong()
+            kernel32.GetPhysicallyInstalledSystemMemory(ctypes.byref(mem))
+            ram_gb = mem.value / (1024 * 1024)
+        else:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    if "MemTotal" in line:
+                        ram_gb = int(line.split()[1]) / (1024 * 1024)
+                        break
+        ok = ram_gb >= 8
+        print(f"{'  ✅' if ok else '  ⚠️'} RAM: {ram_gb:.0f} GB {'(OK)' if ok else '(менее 8GB — используйте concurrency=1)'}")
+        return ok
+    except:
+        print(f"  ➖ RAM: не удалось проверить (по умолчанию concurrency=1)")
+        return False
+
 PASS = "  ✅"
 FAIL = "  ❌"
 SKIP = "  ➖"
@@ -61,8 +83,9 @@ def main():
     print(" translate-book-parallel — Setup & Verification")
     print("=" * 55 + "\n")
 
-    print("[1/5] Python")
+    print("\n[1/5] Python")
     py_ok = check_python()
+    ram_ok = check_ram()
 
     print("\n[2/5] System tools")
     cal_ok = check_calibre()
@@ -91,7 +114,11 @@ def main():
     print("   1. Install skill in Hermes:")
     print("      cp -r translate-book-parallel ${HERMES_HOME:-$HOME/.hermes}/skills/")
     print("   2. /reload-skills in chat")
-    print("   3. Say: переведи D:\\book.epub на русский")
+    print("   3. Say: переведи D:\\\\book.epub на русский")
+    if not ram_ok:
+        print("")
+        print("   ⚠️ Low memory detected. Concurrency limited to 1 chank.")
+        print("   Set 'concurrency: 1' in SKILL.md before translating.")
     print("=" * 55 + "\n")
 
 if __name__ == "__main__":

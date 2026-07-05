@@ -477,3 +477,10 @@ Tell the user:
 - The translated title
 - List generated output files with sizes
 - Any format generation failures
+
+## Memory & Performance Notes
+
+- **RAM requirement**: Minimum 4GB, recommended 8GB+ for parallel translation
+- **Concurrency**: On systems with <8GB RAM, use `concurrency: 1` to avoid memory overflow
+- **Chunk size**: Default ~6000 chars. Reduce if hitting context limits
+- **Resumable**: Translation is chunk-level resumable — crash only loses the current batch

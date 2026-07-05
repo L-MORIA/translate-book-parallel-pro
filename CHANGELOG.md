@@ -27,3 +27,26 @@ Port: `translate-book-parallel` (Hermes Agent)
 - `delegate_task` max 3 concurrent sub-agents per batch (configurable via `delegation.max_concurrent_children`)
 - All script paths use `{baseDir}` for skill-relative resolution
 - Translation prompt unchanged — same quality rules, term table, and neighbor context
+
+## v1.1.0 — Memory Fix & Sherlock Holmes Smoke Test
+
+### Memory Overflow Incident (2026-07-05)
+
+**Symptoms:** Running 3 parallel sub-agents (concurrency=3) on an 8GB RAM system caused Hermes to crash with memory overflow after translating 8 chunks.
+
+**Root cause:** Each sub-agent loads the LLM independently. 3 concurrent × ~10KB context per chunk × accumulation in parent conversation = RAM exhaustion on 8GB systems.
+
+**Fix applied:**
+- Added `check_ram()` to `scripts/setup.py` — warns if <8GB RAM detected
+- Added `Memory & Performance Notes` section to `SKILL.md` — recommends concurrency=1 on low-RAM systems
+- Default concurrency reduced to 1 for Hermes Agent (memory-safe mode)
+- Resumable pipeline design confirmed: crash only loses in-flight chunks, completed chunks survive
+
+### Added
+- `tests/smoke_test.md` — sample English book page (Sherlock Holmes)
+- `tests/output_sample.md` — actual Russian translation output from the smoke test
+- `scripts/setup.py` — RAM check: detects physical RAM, warns if below 8GB threshold
+
+### Changed
+- `SKILL.md` — added Memory & Performance Notes section
+- `scripts/setup.py` — integrated `check_ram()` into verification pipeline
