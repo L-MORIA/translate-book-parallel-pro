@@ -1,0 +1,20 @@
+# Auto-detect line endings
+* text=auto
+
+# Python files
+*.py text diff=python
+
+# Markdown
+*.md text
+
+# Shell scripts
+*.sh text eol=lf
+
+# Batch files
+*.bat text eol=crlf
+
+# Binary files
+*.epub binary
+*.pdf binary
+*.exe binary
+*.pyc binary
