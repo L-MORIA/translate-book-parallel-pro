@@ -2,7 +2,7 @@
 name: translate-book-parallel
 description: Translate books (PDF/DOCX/EPUB) into any language using parallel sub-agents (Hermes delegate_task). Converts input -> Markdown chunks -> translated chunks -> HTML/DOCX/EPUB/PDF.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, execute_code
-metadata: {"hermes":{"requires":{"bins":["python","pandoc","ebook-convert"],"anyBins":["calibre","ebook-convert"]},"homepage":"https://github.com/L-MORIA/translate-book-parallel"}}
+metadata: {"hermes":{"requires":{"bins":["python","pandoc","ebook-convert"],"anyBins":["calibre","ebook-convert"]},"homepage":"https://github.com/deusyu/translate-book"}}
 ---
 
 # Book Translation Skill
@@ -15,7 +15,7 @@ You are a book translation assistant. You translate entire books from one langua
 
 Determine the following from the user's message:
 - **file_path**: Path to the input file (PDF, DOCX, or EPUB) — REQUIRED
-- **target_lang**: Target language code (default: `zh`) — e.g. zh, en, ja, ko, fr, de, es
+- **target_lang**: Target language code (default: `zh`) — e.g. zh, en, ja, ko, ru, fr, de, es
 - **concurrency**: Number of parallel sub-agents per batch (default: `8`)
 - **temp_root**: Optional directory under which `{filename}_temp/` should be created
 - **epub_cover**: Optional explicit cover image path for EPUB output
@@ -212,7 +212,79 @@ The meta file is read by the main agent later and merged into `glossary.json` (s
 
 #### Translation Prompt for Sub-Agents
 
-Include this translation prompt in each sub-agent's instructions (replace `{TARGET_LANGUAGE}` with the actual language name, e.g. "Chinese"):
+Include this translation prompt in each sub-agent's instructions (replace `{TARGET_LANGUAGE}` with the actual language name, e.g. "Chinese", "Russian").
+
+**If target is Russian (`ru`), use this prompt:**
+
+---
+
+Переведите markdown-файл на {TARGET_LANGUAGE}.
+ВАЖНЫЕ ТРЕБОВАНИЯ:
+1. Строго сохраняйте Markdown-разметку: заголовки, ссылки, изображения
+2. Переводите только текст, не трогайте Markdown-синтаксис и имена файлов
+3. Удаляйте пустые ссылки, лишние символы и знаки `\` в конце строк. Номера страниц уже обработаны convert.py — не удаляйте отдельные цифровые строки (годы 1984, номера глав, номера引用 и т.д.)
+4. Обеспечьте точность перевода при естественном и плавном стиле
+5. Выводите ТОЛЬКО переведённый текст — никаких пояснений, комментариев, диалогов
+6. Используйте ясные и краткие формулировки. Переводите последовательно, не пропускайте содержимое
+7. Сохраняйте все ссылки на изображения:
+   - Все изображения в формате `![alt](path)` должны быть полностью сохранены
+   - Имена файлов и пути не изменяйте (например, media/image-001.png)
+   - Alt-текст изображений можно переводить, структуру ссылки сохраняйте
+   - Не удаляйте, не фильтруйте и не игнорируйте изображения
+   - Пример: `![Figure 1: Data Flow](media/image-001.png)` → `![Рисунок 1: Поток данных](media/image-001.png)`
+   - **HTML-теги (например, `<img alt="..." />`, `<a title="...">`) должны оставаться валидными**: при переводе текста внутри `alt`, `title` и других атрибутов следующие символы могут сломать HTML — замените их на безопасные аналоги (только для **значений атрибутов внутри HTML-тегов**; обычный Markdown, код и URL не экранируйте):
+
+     | Символ | Опасность внутри атрибута | Замена |
+     |--------|---------------------------|--------|
+     | `"` | Закрывает `attr="..."` | « » (кавычки-ёлочки) или `&quot;` |
+     | `'` | Закрывает `attr='...'` | « » или `&#39;` |
+     | `<` | Начало нового тега | `&lt;` |
+     | `>` | Конец тега | `&gt;` |
+     | `&` | Начало сущности (кроме уже `&xxx;`) | `&amp;` |
+
+     Не изменяйте `src`, `href` и другие структурные атрибуты — переводите только видимый текст (`alt`, `title`).
+
+     - Ошибка: `alt="Книга "Война и мир""` ← внутренние кавычки ломают атрибут
+     - Правильно: `alt="Книга «Война и мир»"` или `alt="Книга &quot;Война и мир&quot;"`
+
+8. Распознавайте иерархию заголовков:
+   - Главный заголовок (название книги, главы) — `#`
+   - Заголовки первого уровня (разделы) — `##`
+   - Заголовки второго уровня (подразделы) — `###`
+   - Третьего уровня — `####`
+   - Четвёртого и ниже — `#####`
+
+9. Правила определения заголовков:
+   - Короткий текст (обычно менее 50 символов) на отдельной строке
+   - Обобщающие или итоговые фразы
+   - Текст, разделяющий и организующий структуру документа
+   - Текст с явно отличающимся размером шрифта или форматированием
+   - Нумерованные заголовки (например, "1.1 Введение", "Глава 3")
+
+10. Определение уровня заголовка:
+    - Заголовки глав — высокий уровень (`#` или `##`)
+    - Подразделы и подподразделы — последовательное понижение (`###` `####` `#####`)
+    - Сохраняйте единообразие уровней внутри документа
+
+11. Примечания:
+    - Не добавляйте лишние заголовки — маркируйте только настоящие
+    - Основные абзацы не должны получать заголовочную разметку
+    - Если в оригинале уже есть Markdown-заголовки, сохраняйте их уровни
+
+12. {CUSTOM_INSTRUCTIONS if provided}
+13. Единообразие терминов: следующие термины нужно строго использовать в указанном переводе. Если в тексте встречается форма из столбца «оригинал» **или** столбца «псевдонимы», она должна быть переведена в форму из столбца «перевод».
+
+{TERM_TABLE}
+
+Контекст соседних фрагментов (только для чтения, не переводить, не включать в вывод; используется для определения местоимений, рода, псевдонимов и跨 fragment ссылок; пустое поле — пропустите):
+
+{NEIGHBOR_CONTEXT}
+
+Текст markdown-файла:
+
+---
+
+**Otherwise (default, e.g. Chinese `zh`), use this prompt:**
 
 ---
 
@@ -234,8 +306,8 @@ IMPORTANT REQUIREMENTS:
 
      | 字符 | 在属性值内的危险 | 替换为 |
      |------|---------------|--------|
-     | `"` | 闭合 `attr="..."` | 目标语言合适的弯引号（如中文 `“` `”`）或 `&quot;` |
-     | `'` | 闭合 `attr='...'` | 目标语言合适的弯引号（如中文 `‘` `’`）或 `&#39;` |
+     | `"` | 闭合 `attr="..."` | 目标语言合适的弯引号（如中文 “ ”）或 `&quot;` |
+     | `'` | 闭合 `attr='...'` | 目标语言合适的弯引号（如中文 ‘ ’）或 `&#39;` |
      | `<` | 被解析为新标签 | `&lt;` |
      | `>` | 被解析为标签结束 | `&gt;` |
      | `&` | 被解析为实体起始（除非已是 `&xxx;`） | `&amp;` |
@@ -243,7 +315,7 @@ IMPORTANT REQUIREMENTS:
      不要修改 `src`、`href` 等结构性属性的值，只翻译可见文本属性（`alt`、`title`）。
 
      - 错误示例：`alt="爱丽丝拿着标着"喝我"的瓶子"` ← 内层英文 `"` 把外层 alt 撑断了
-     - 正确示例：`alt="爱丽丝拿着标着“喝我”的瓶子"` 或 `alt="爱丽丝拿着标着&quot;喝我&quot;的瓶子"`
+     - 正确示例：`alt="爱丽丝拿着标着"喝我"的瓶子"` 或 `alt="爱丽丝拿着标着&quot;喝我&quot;的瓶子"`
 8. 智能识别和处理多级标题，按照以下规则添加markdown标记：
    - 主标题（书名、章节名等）使用 # 标记
    - 一级标题（大节标题）使用 ## 标记
@@ -374,7 +446,7 @@ Report any chunks that failed translation after retry.
 
 Read `config.txt` from the temp directory to get the `original_title` field.
 
-Translate the title to the target language. For Chinese, wrap in 书名号: `《translated_title》`.
+Translate the title to the target language. For Chinese, wrap in 书名号: `《translated_title》`. For Russian, wrap in angle quotes: `«translated_title»`.
 
 ### 7. Post-process — Merge and Build
 

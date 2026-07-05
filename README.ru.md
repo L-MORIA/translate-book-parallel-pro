@@ -123,6 +123,7 @@ python scripts/merge_and_build.py --temp-dir book_temp --title "Название
 | `en` | Английский |
 | `ja` | Японский |
 | `ko` | Корейский |
+| `ru` | Русский |
 | `fr` | Французский |
 | `de` | Немецкий |
 | `es` | Испанский |

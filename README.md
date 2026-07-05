@@ -123,6 +123,7 @@ Outputs in `book_temp/`:
 | `en` | English |
 | `ja` | Japanese |
 | `ko` | Korean |
+| `ru` | Russian |
 | `fr` | French |
 | `de` | German |
 | `es` | Spanish |
