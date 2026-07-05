@@ -39,7 +39,7 @@ Each chunk gets its own independent sub-agent with a fresh context window. This 
 - **Integrity validation** — SHA-256 hashes prevent stale/corrupt output from being merged
 - **Multi-format output** — HTML (floating TOC), DOCX, EPUB, PDF
 - **Format-agnostic input** — PDF, DOCX, EPUB all handled by Calibre
-- **Multi-language** — zh, en, ja, ko, fr, de, es (extensible)
+- **Multi-language with dedicated prompts** — zh (Chinese), ru (Russian), en, ja, ko, fr, de, es
 
 ## Prerequisites
 
