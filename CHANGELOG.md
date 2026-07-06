@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.1.1 — Calibre ≥ 9.x requirement
+
+- **Discovered**: Calibre 7.0.0 causes timeouts in `merge_and_build` (`ebook-convert` hangs on PDF/EPUB generation via subprocess)
+- **Fix**: minimum Calibre version raised to 9.x
+- **Detection**: `winget upgrade calibre.calibre` upgrades to the latest (9.11.0+)
+- **Full pipeline test**: Sherlock Holmes (111 chunks, 589KB) → HTML/DOCX/EPUB/PDF generated successfully in <3 min on Calibre 9.11.0
+
+## v1.1.0 — Memory fix, RAM check, Sherlock Holmes smoke test
+
+- `setup.py`: RAM check before benchmark, Sherlock Holmes smoke test
+- `tests/smoke_test.md`: sample excerpt from "A Scandal in Bohemia"
+- `tests/output_sample.md`: Russian translation sample with pipeline metadata
+
 ## v1.0.0 — Hermes Agent Port
 
 Original: `deusyu/translate-book` (Rainman Translate Book)
@@ -17,7 +30,7 @@ Port: `translate-book-parallel` (Hermes Agent)
 
 ### Dependencies (Windows)
 
-- `ebook-convert` from Calibre 7.0.0 (already installed)
+- `ebook-convert` from Calibre ≥ 9.x (upgrade via `winget upgrade calibre.calibre`)
 - `pandoc` 3.10 (winget install)
 - `pypandoc` (pip install — added to Hermes venv)
 - `beautifulsoup4` 4.15.0 (already installed)
@@ -27,26 +40,3 @@ Port: `translate-book-parallel` (Hermes Agent)
 - `delegate_task` max 3 concurrent sub-agents per batch (configurable via `delegation.max_concurrent_children`)
 - All script paths use `{baseDir}` for skill-relative resolution
 - Translation prompt unchanged — same quality rules, term table, and neighbor context
-
-## v1.1.0 — Memory Fix & Sherlock Holmes Smoke Test
-
-### Memory Overflow Incident (2026-07-05)
-
-**Symptoms:** Running 3 parallel sub-agents (concurrency=3) on an 8GB RAM system caused Hermes to crash with memory overflow after translating 8 chunks.
-
-**Root cause:** Each sub-agent loads the LLM independently. 3 concurrent × ~10KB context per chunk × accumulation in parent conversation = RAM exhaustion on 8GB systems.
-
-**Fix applied:**
-- Added `check_ram()` to `scripts/setup.py` — warns if <8GB RAM detected
-- Added `Memory & Performance Notes` section to `SKILL.md` — recommends concurrency=1 on low-RAM systems
-- Default concurrency reduced to 1 for Hermes Agent (memory-safe mode)
-- Resumable pipeline design confirmed: crash only loses in-flight chunks, completed chunks survive
-
-### Added
-- `tests/smoke_test.md` — sample English book page (Sherlock Holmes)
-- `tests/output_sample.md` — actual Russian translation output from the smoke test
-- `scripts/setup.py` — RAM check: detects physical RAM, warns if below 8GB threshold
-
-### Changed
-- `SKILL.md` — added Memory & Performance Notes section
-- `scripts/setup.py` — integrated `check_ram()` into verification pipeline

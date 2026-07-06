@@ -46,7 +46,7 @@ HTML / DOCX / EPUB / PDF
 | Компонент | Обязательно | Установка |
 |-----------|-------------|-----------|
 | **Python 3.8+** | Да | `python --version` |
-| **Calibre** (ebook-convert) | Да | [calibre-ebook.com](https://calibre-ebook.com/) |
+| **Calibre** (ebook-convert) ≥ 9.x | Да | [calibre-ebook.com](https://calibre-ebook.com/) или `winget upgrade calibre.calibre` |
 | **Pandoc** | Да | `winget install JohnMacFarlane.Pandoc` |
 | **pypandoc** | Да | `pip install pypandoc` |
 | **beautifulsoup4** | Рекомендуется | `pip install beautifulsoup4` |

@@ -46,7 +46,7 @@ Each chunk gets its own independent sub-agent with a fresh context window. This 
 | Dependency | Required | Install |
 |-----------|----------|---------|
 | **Python 3.8+** | Yes | `python --version` |
-| **Calibre** (ebook-convert) | Yes | [calibre-ebook.com](https://calibre-ebook.com/) |
+| **Calibre** (ebook-convert) ≥ 9.x | Yes | [calibre-ebook.com](https://calibre-ebook.com/) or `winget upgrade calibre.calibre` |
 | **Pandoc** | Yes | `winget install JohnMacFarlane.Pandoc` |
 | **pypandoc** | Yes | `pip install pypandoc` |
 | **beautifulsoup4** | Recommended | `pip install beautifulsoup4` |

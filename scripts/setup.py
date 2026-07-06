@@ -50,7 +50,21 @@ def check_python():
 def check_calibre():
     ok, ver = sh("ebook-convert --version")
     if ok:
-        print(f"{PASS} Calibre: {ver}")
+        ver_num = 0
+        try:
+            # Extract version number from "ebook-convert.exe (calibre 9.11.0)"
+            import re
+            m = re.search(r'(\d+)\.(\d+)', ver)
+            if m:
+                ver_num = int(m.group(1)) * 100 + int(m.group(2))
+        except:
+            pass
+        if ver_num >= 900:
+            print(f"{PASS} Calibre: {ver} (≥ 9.x — OK)")
+        else:
+            print(f"{FAIL} Calibre: {ver} (< 9.x — merge_and_build may hang)")
+            print(f"       Upgrade: winget upgrade calibre.calibre")
+            return False
     else:
         print(f"{FAIL} Calibre (ebook-convert) not found — install from https://calibre-ebook.com/")
     return ok
