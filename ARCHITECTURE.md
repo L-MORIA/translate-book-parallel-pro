@@ -119,22 +119,89 @@
 ## Key Design Principles
 
 ### 1. Isolated Context per Chunk
-Each sub-agent starts fresh. Prevents context overflow on long books.
 
-### 2. Hash-Based Integrity
-SHA-256 tracking catches stale/corrupt chunks before merging.
+Each sub-agent translates exactly **one chunk** (~6000 chars) in a completely fresh context window. The naive approach — feeding a whole book into a single LLM session — inevitably degrades quality: the model's attention dilutes across hundreds of pages, the middle chapters suffer, and output truncation becomes likely.
 
-### 3. Resumable at Chunk Granularity
-Re-run the skill — already-translated chunks are skipped automatically.
+By contrast, this pipeline gives every fragment of the book the **same ideal conditions** as the first page. No context decay, no accumulated noise, no truncation. The model can focus 100% of its capacity on a single coherent passage.
 
-### 4. Format-Agnostic Input
-Calibre normalizes PDF/DOCX/EPUB → HTMLZ → Markdown before pipeline begins.
+### 2. Glossary-Driven Term Consistency (The Secret Weapon)
 
-### 5. Multiple Output Formats
-Single pipeline produces HTML, DOCX, EPUB, and PDF simultaneously.
+This is the single biggest quality driver. Without a shared glossary, the same entity drifts across chunks:
+- `Sherlock Holmes` → chunk 1: *Шерлок Холмс*, chunk 2: *Шерлок*, chunk 3: *мистер Холмс*
+- `Baker Street` → chunk 1: *Бейкер-стрит*, chunk 5: *улица Бейкер*
 
-### 6. Glossary-Driven Consistency
-Shared glossary prevents term drift across parallel sub-agents.
+The pipeline solves this with a **canonical glossary** that every sub-agent must obey:
+
+1. **Before translation**: sample the book, extract proper nouns and domain terms, build `glossary.json`
+2. **Per-chunk injection**: each sub-agent receives only the terms relevant to its chunk (via `glossary.py print-terms-for-chunk`)
+3. **Post-batch merge**: sub-agents emit `meta.json` files with proposed new entities. `merge_meta.py` auto-applies unanimous proposals and surfaces conflicts for main-agent resolution
+4. **Progressive enrichment**: terms discovered in later chunks propagate back to earlier chunks on re-translation
+
+The result: a character introduced in chapter 10 is translated identically when mentioned in chapter 2 on the next run. Over a full book, this eliminates the most visible class of translation inconsistency.
+
+### 3. Neighbor Context for Cohesion
+
+A chunk translated in isolation loses continuity: pronouns lose their referents, cross-chapter entities feel disconnected. Each sub-agent receives **read-only excerpts** (~300 chars) from the immediately preceding and following chunks.
+
+This is strictly read-only — the sub-agent must not translate or copy these excerpts. They exist only for pronoun resolution, gender agreement, and entity tracking across chunk boundaries.
+
+Without this, every chunk boundary would produce a noticeable seam. With it, the reader cannot tell where one chunk ended and the next began.
+
+### 4. Language-Specific Translation Prompts
+
+Generic "translate to Russian" prompts produce mediocre results because they lack language-specific typographic rules. This skill carries **dedicated prompts** for each supported language:
+
+| Language | Prompt features |
+|----------|----------------|
+| Chinese (zh) | 书名号 `《》` for titles, CJK spacing rules, Chinese punctuation |
+| Russian (ru) | «кавычки-ёлочки», em-dash rules, тире vs дефис, proper noun inflection |
+
+Each prompt is battle-tested against real translation pitfalls: HTML-safe attribute escaping (`alt="Книга «Война и мир»"`), heading hierarchy detection, markdown structure preservation. Adding a new language means creating a new prompt with its own typographic rules.
+
+### 5. Hash-Based Integrity Verification
+
+Before any merge, the pipeline verifies:
+- Every source chunk has a corresponding translated output
+- Source chunk SHA-256 hashes match the manifest (no corruption during translation)
+- No output files are empty or blank
+
+This prevents the most frustrating class of bug: a book assembled with silently missing or corrupted chapters. If validation fails, only the affected chunks need re-translation.
+
+### 6. Resumable at Chunk Granularity
+
+Translation of a 300-page book can take hours. If the process is interrupted — network failure, API timeout, computer restart — the pipeline **resumes from where it stopped**, not from the beginning. Already-translated chunks are detected by the presence of valid `output_chunk*.md` files and skipped. `run_state.json` tracks per-chunk status for selective re-translation when the glossary changes.
+
+This makes the skill practical for real use: you can start a large translation, walk away, come back, and continue without losing progress.
+
+### 7. Multiple Output Formats from One Pipeline
+
+The same translated chunks feed **five output formats** simultaneously:
+- **HTML** — web-ready with floating table of contents
+- **DOCX** — Microsoft Word, editable
+- **EPUB** — standard e-book format
+- **PDF** — print-ready
+
+This is not a afterthought: `merge_and_build.py` produces all five from the merged `output.md` in a single pass.
+
+### 8. Calibre-Mediated Input Normalization
+
+PDF, DOCX, and EPUB are wildly different formats. Rather than writing separate parsers for each, the pipeline delegates to **Calibre's `ebook-convert`**, which normalizes any input → HTMLZ → HTML → Markdown. This means:
+- One conversion script handles all input formats
+- Edge cases (DRM-free PDFs with complex layouts, legacy EPUB2, DOCX with tracked changes) are handled by Calibre's mature codebase
+- Adding a new input format requires zero pipeline changes — if Calibre supports it, the pipeline does too
+
+### Why This Architecture Produces Better Translations Than Single-Session Approaches
+
+| Factor | Single-session translation | Chunked pipeline with glossary |
+|--------|---------------------------|-------------------------------|
+| Context window | Entire book → attention decay | One chunk → full attention |
+| Term consistency | Drifts over 50+ pages | Forced canonical via glossary |
+| Recovery on failure | Start over from page 1 | Resume from last chunk |
+| Parallelism | Sequential | 8+ concurrent sub-agents |
+| Output quality | Degrades after ~20 pages | Consistent across 200+ pages |
+| Format support | Usually plain text only | HTML + DOCX + EPUB + PDF |
+
+The architecture was designed specifically to eliminate the weaknesses of naive LLM book translation: context overflow, term drift, irrecoverable interruptions, and single-format output.
 
 ## Directory Structure
 
