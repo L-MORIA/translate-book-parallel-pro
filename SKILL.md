@@ -1,8 +1,8 @@
 ---
-name: translate-book-parallel
-description: Translate books (PDF/DOCX/EPUB) into any language using parallel sub-agents (Hermes delegate_task). Converts input -> Markdown chunks -> translated chunks -> HTML/DOCX/EPUB/PDF.
+name: translate-book-parallel-pro
+description: Translate books (PDF/DOCX/EPUB) into any language using parallel sub-agents (Hermes delegate_task). Optimised for powerful hardware (32GB+ RAM, 8+ CPU cores). Converts input -> Markdown chunks -> translated chunks -> HTML/DOCX/EPUB/PDF.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, execute_code
-metadata: {"hermes":{"requires":{"bins":["python","pandoc","ebook-convert"],"anyBins":["calibre","ebook-convert"]},"homepage":"https://github.com/L-MORIA/translate-book-parallel"}}
+metadata: {"hermes":{"requires":{"bins":["python","pandoc","ebook-convert"],"anyBins":["calibre","ebook-convert"]},"homepage":"https://github.com/L-MORIA/translate-book-parallel-pro"}}
 ---
 
 # Book Translation Skill
@@ -16,7 +16,7 @@ You are a book translation assistant. You translate entire books from one langua
 Determine the following from the user's message:
 - **file_path**: Path to the input file (PDF, DOCX, or EPUB) — REQUIRED
 - **target_lang**: Target language code (default: `zh`) — e.g. zh, en, ja, ko, ru, fr, de, es
-- **concurrency**: Number of parallel sub-agents per batch (default: `8`)
+- **concurrency**: Number of parallel sub-agents per batch (default: `24`)
 - **temp_root**: Optional directory under which `{filename}_temp/` should be created
 - **epub_cover**: Optional explicit cover image path for EPUB output
 - **export_name**: Optional filename stem for user-facing output aliases
@@ -134,7 +134,7 @@ to Step 5.
 **Each chunk gets its own independent sub-agent** (1 chunk = 1 sub-agent = 1 fresh context). This prevents context accumulation and output truncation.
 
 Launch chunks in batches to respect API rate limits:
-- Each batch: up to `concurrency` sub-agents in parallel (default: 8)
+- Each batch: up to `concurrency` sub-agents in parallel (default: 24)
 - Wait for the current batch to complete before launching the next
 
 **Spawn each sub-agent with the following task using `delegate_task` (Hermes parallel sub-agent mechanism).** Launch batches of up to `concurrency` sub-agents concurrently via `delegate_task` with `tasks` array (max 3 per batch for this user; adjust concurrency accordingly). Each sub-agent gets its own isolated context.
@@ -480,7 +480,8 @@ Tell the user:
 
 ## Memory & Performance Notes
 
-- **RAM requirement**: Minimum 4GB, recommended 8GB+ for parallel translation
-- **Concurrency**: On systems with <8GB RAM, use `concurrency: 1` to avoid memory overflow
-- **Chunk size**: Default ~6000 chars. Reduce if hitting context limits
+- **RAM requirement**: Minimum 32GB, recommended 64GB+ for full parallel throughput
+- **CPU**: 8+ cores recommended. On <4 cores, reduce `concurrency` to 4-8
+- **Concurrency**: Default 24 utilises high-core-count CPUs. Reduce to 8-12 on systems with <32GB RAM
+- **Chunk size**: Default ~15000 chars per chunk (double the original). Reduces total chunk count by ~50%, fewer API calls per book
 - **Resumable**: Translation is chunk-level resumable — crash only loses the current batch

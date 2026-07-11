@@ -813,7 +813,7 @@ def main():
     parser.add_argument("input_file", help="Input file (PDF, DOCX, or EPUB)")
     parser.add_argument("-l", "--ilang", default="auto", help="Input language (default: auto)")
     parser.add_argument("--olang", default="zh", help="Output language (default: zh)")
-    parser.add_argument("--chunk-size", type=int, default=6000, help="Target chunk size in characters (default: 6000)")
+    parser.add_argument("--chunk-size", type=int, default=15000, help="Target chunk size in characters (default: 15000)")
     parser.add_argument(
         "--temp-root",
         default=None,

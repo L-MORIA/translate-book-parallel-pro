@@ -9,7 +9,7 @@ Run: python scripts/setup.py
 import subprocess, sys, os, platform
 
 def check_ram():
-    """Check available RAM — warn if below safe threshold for parallel translation."""
+    """Check available RAM — warn if below safe threshold for PRO parallel translation."""
     try:
         if platform.system() == "Windows":
             import ctypes
@@ -23,12 +23,23 @@ def check_ram():
                     if "MemTotal" in line:
                         ram_gb = int(line.split()[1]) / (1024 * 1024)
                         break
-        ok = ram_gb >= 8
-        print(f"{'  ✅' if ok else '  ⚠️'} RAM: {ram_gb:.0f} GB {'(OK)' if ok else '(менее 8GB — используйте concurrency=1)'}")
+        ok = ram_gb >= 32
+        print(f"  {'✅' if ok else '⚠️'} RAM: {ram_gb:.0f} GB {'(OK)' if ok else '(менее 32GB — уменьшите concurrency до 8-12)'}")
         return ok
     except:
-        print(f"  ➖ RAM: не удалось проверить (по умолчанию concurrency=1)")
-        return False
+        print(f"  ➖ RAM: не удалось проверить (по умолчанию concurrency=24)")
+        return True
+
+def check_cpu():
+    """Check CPU core count — warn if below recommended threshold."""
+    try:
+        cores = os.cpu_count() or 0
+        ok = cores >= 8
+        print(f"  {'✅' if ok else '⚠️'} CPU: {cores} ядер {'(OK)' if ok else '(менее 8 — уменьшите concurrency до 4-8)'}")
+        return ok
+    except:
+        print(f"  ➖ CPU: не удалось проверить")
+        return True
 
 PASS = "  ✅"
 FAIL = "  ❌"
@@ -94,22 +105,23 @@ def install_pip(name):
 
 def main():
     print("\n" + "=" * 55)
-    print(" translate-book-parallel — Setup & Verification")
+    print(" translate-book-parallel-pro — Setup & Verification")
     print("=" * 55 + "\n")
 
-    print("\n[1/5] Python")
+    print("\n[1/4] Python + Hardware")
     py_ok = check_python()
     ram_ok = check_ram()
+    cpu_ok = check_cpu()
 
-    print("\n[2/5] System tools")
+    print("\n[2/4] System tools")
     cal_ok = check_calibre()
     pan_ok = check_pandoc()
 
-    print("\n[3/5] Python packages")
+    print("\n[3/4] Python packages")
     pypa_ok = check_pip_module("pypandoc")
     bs4_ok = check_pip_module("bs4")
 
-    print("\n[4/5] Auto-install missing pip packages")
+    print("\n[4/4] Auto-install missing pip packages")
     if not pypa_ok:
         pypa_ok = install_pip("pypandoc")
     if not bs4_ok:
@@ -126,13 +138,15 @@ def main():
     print("\n" + "=" * 55)
     print(" Quick start:")
     print("   1. Install skill in Hermes:")
-    print("      cp -r translate-book-parallel ${HERMES_HOME:-$HOME/.hermes}/skills/")
+    print("      cp -r translate-book-parallel-pro ${HERMES_HOME:-$HOME/.hermes}/skills/")
     print("   2. /reload-skills in chat")
-    print("   3. Say: переведи D:\\\\book.epub на русский")
+    print("   3. Say: переведи D:\\\\book.epub на русский (concurrency=24, chunk_size=15000)")
     if not ram_ok:
         print("")
-        print("   ⚠️ Low memory detected. Concurrency limited to 1 chank.")
-        print("   Set 'concurrency: 1' in SKILL.md before translating.")
+        print("   ⚠️ Low memory detected. Set 'concurrency: 8-12' before translating.")
+    if not cpu_ok:
+        print("")
+        print("   ⚠️ Low core count. Set 'concurrency: 4-8' before translating.")
     print("=" * 55 + "\n")
 
 if __name__ == "__main__":
