@@ -27,26 +27,25 @@ echo.
 :input_file
 set "INPUT_FILE=%1"
 if "%INPUT_FILE%"=="" (
-    echo Drop a file here or type the path:
-    echo Formats: EPUB, PDF, DOCX, TXT
-    echo.
-    set /p "INPUT_FILE=^> "
+    echo Opening file picker...
+    for /f "usebackq tokens=*" %%i in (`powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Books (EPUB,PDF,DOCX,TXT)|*.epub;*.pdf;*.docx;*.txt|EPUB files|*.epub|PDF files|*.pdf|DOCX files|*.docx|TXT files|*.txt|All files|*.*'; $f.Title = 'Select a book to translate'; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }"`) do set "INPUT_FILE=%%i"
     echo.
 )
 
 set "INPUT_FILE=%INPUT_FILE:"=%"
 
 if not exist "%INPUT_FILE%" (
-    echo Error: file not found!
+    echo No file selected. Exiting.
     echo.
-    goto input_file
+    pause
+    exit /b 1
 )
 
 :: ─── Detect format ───────────────────────────────────────────
-set "EXT=%~xINPUT_FILE%"
+for %%i in ("%INPUT_FILE%") do set "EXT=%%~xi"
 set "EXT=%EXT:.=%"
 
-echo File: %~nxINPUT_FILE%
+echo File: %INPUT_FILE%
 echo Format: %EXT%
 
 echo %EXT% | findstr /i "epub pdf docx txt" >nul
@@ -71,14 +70,12 @@ if "%TARGET_LANG%"=="" set "TARGET_LANG=ru"
 echo.
 
 :: ─── Book name ───────────────────────────────────────────────
-set "BOOK_NAME=%~nINPUT_FILE%"
+for %%i in ("%INPUT_FILE%") do set "BOOK_NAME=%%~ni"
 echo Book: %BOOK_NAME%
 echo.
 
 :: ─── Create output dir ───────────────────────────────────────
-for /f %%d in ('wmic os get localdatetime ^| findstr /r "^"') do set "DT=%%d" 2>nul
-if "%DT%"=="" for /f "tokens=2 delims==" %%d in ('wmic os get localdatetime /format:value') do set "DT=%%d"
-set "TIMESTAMP=%DT:~0,4%-%DT:~4,2%-%DT:~6,2%_%DT:~8,2%-%DT:~10,2%"
+for /f "usebackq tokens=*" %%d in (`powershell -Command "Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'"`) do set "TIMESTAMP=%%d"
 set "OUT_DIR=%OUTPUT_ROOT%\%BOOK_NAME%_%TIMESTAMP%"
 md "%OUT_DIR%" 2>nul
 
