@@ -485,3 +485,21 @@ Tell the user:
 - **Concurrency**: Default 24 utilises high-core-count CPUs. Reduce to 8-12 on systems with <32GB RAM
 - **Chunk size**: Default ~15000 chars per chunk (double the original). Reduces total chunk count by ~50%, fewer API calls per book
 - **Resumable**: Translation is chunk-level resumable — crash only loses the current batch
+
+## Path Guide
+
+**Always run scripts from the repo root and use `--temp-root`:**
+
+```bash
+cd /path/to/translate-book-parallel-pro
+python scripts/convert.py book.epub --olang ru --temp-root test-output/
+# → Chunks go to: test-output/<book>_temp/
+
+python scripts/merge_and_build.py \
+  --temp-dir test-output/<book>_temp \
+  --title "Title" --cleanup
+# → Final files go to: test-output/book.{epub,docx,pdf,html}
+```
+
+Without `--temp-root`, temp dirs are created in the current working directory.
+This can cause confusion when running from a profile skills directory.
