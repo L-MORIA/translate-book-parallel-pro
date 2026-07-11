@@ -82,6 +82,13 @@ md "%OUT_DIR%" 2>nul
 echo Output: %OUT_DIR%
 echo.
 
+:: ─── Ensure dependencies ────────────────────────────────────
+echo Installing dependencies (pypandoc, beautifulsoup4)...
+python "%SCRIPTS_DIR%\setup.py" >nul 2>&1
+pip install pypandoc beautifulsoup4 >nul 2>&1
+echo Done.
+echo.
+
 :: ─── Step 1: Convert ─────────────────────────────────────────
 echo [1/2] Converting to chunks...
 echo.
@@ -90,7 +97,7 @@ set "START_TIME=%TIME%"
 echo Started: %START_TIME%
 echo.
 
-call "%SCRIPTS_DIR%\convert.py" "%INPUT_FILE%" --olang %TARGET_LANG% --temp-root "%OUT_DIR%"
+python "%SCRIPTS_DIR%\convert.py" "%INPUT_FILE%" --olang %TARGET_LANG% --temp-root "%OUT_DIR%"
 if errorlevel 1 (
     echo Conversion failed!
     pause
@@ -119,7 +126,7 @@ echo [2/2] Building output formats...
 echo.
 
 set "TEMP_DIR=%OUT_DIR%\%BOOK_NAME%_temp"
-call "%SCRIPTS_DIR%\merge_and_build.py" --temp-dir "%TEMP_DIR%" --title "%BOOK_NAME%" --cleanup
+python "%SCRIPTS_DIR%\merge_and_build.py" --temp-dir "%TEMP_DIR%" --title "%BOOK_NAME%" --cleanup
 if errorlevel 1 (
     echo Build failed - translation may not be complete yet.
     pause
