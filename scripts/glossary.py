@@ -489,7 +489,8 @@ def select_terms_for_chunk(glossary, chunk_text, top_n=None, max_terms=DEFAULT_M
     if not terms:
         return []
 
-    sort_key = lambda t: (-t.get('frequency', 0), t.get('source', ''))
+    def sort_key(t):
+        return (-t.get('frequency', 0), t.get('source', ''))
 
     local_terms = [t for t in terms if t.get('source') and _term_appears_in_text(t, chunk_text)]
     local_terms.sort(key=sort_key)

@@ -9,9 +9,7 @@ import os
 import sys
 import subprocess
 import argparse
-import tempfile
 import shutil
-from pathlib import Path
 import re
 
 def find_calibre_convert():
@@ -303,7 +301,7 @@ def main():
     # Determine output format
     format_type = get_output_format(output_file)
     if not format_type:
-        print(f"Error: Unsupported output format. Use .docx, .epub, or .pdf")
+        print("Error: Unsupported output format. Use .docx, .epub, or .pdf")
         sys.exit(1)
 
     if args.cover:

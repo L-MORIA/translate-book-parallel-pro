@@ -114,9 +114,9 @@ Skill 自动处理完整流程 — 转换、拆分、并行翻译、校验、合
 ```bash
 mkdir -p tests/.artifacts
 cd tests/.artifacts
-python3 ../../scripts/convert.py ../baselines/standard-alice/standard-alice.epub --olang zh
+python ../../scripts/convert.py ../baselines/standard-alice/standard-alice.epub --olang zh
 # 然后通过 skill 完成翻译
-python3 ../../scripts/merge_and_build.py --temp-dir standard-alice_temp --title "test"
+python ../../scripts/merge_and_build.py --temp-dir standard-alice_temp --title "test"
 ```
 
 ## 反馈与贡献
@@ -137,7 +137,7 @@ Pull request 不是首选贡献入口，可能会被关闭并转为 issue 继续
 ### 第一步：转换
 
 ```bash
-python3 scripts/convert.py /path/to/book.pdf --olang zh
+python scripts/convert.py /path/to/book.pdf --olang zh
 ```
 
 Calibre 将输入文件转为 HTMLZ，解压后转为 Markdown，再拆分为 chunk（每个约 6000 字符）。`manifest.json` 记录每个源 chunk 的 SHA-256 hash，用于后续校验；`source_fingerprint.json` 则把 temp 目录与生成它的源文件字节绑定 — 若源文件被替换后重跑，会直接报错中止，而不是静默复用过时的 chunk。指纹机制之前创建的 temp 目录会在首次重跑时打印警告并被接管。
@@ -151,8 +151,8 @@ Calibre 将输入文件转为 HTMLZ，解压后转为 Markdown，再拆分为 ch
 1. 抽样 5 个 chunk（首章、末章、3 个均匀分布的中间章节）。
 2. 提取专有名词和反复出现的领域术语，给每个术语确定一个标准译法。
 3. 写入 `<temp_dir>/glossary.json`（schema 见下，可手动编辑）。
-4. 运行 `python3 scripts/glossary.py count-frequencies <temp_dir>`，统计每个术语在全书的出现次数（ASCII 术语用单词边界正则，避免 `cat` 误匹配 `category`；中日韩术语用子串匹配；单字汉字术语会被拒绝以防过度匹配；别名也计入所属术语的频次）。
-5. 翻译每个 chunk 之前，主 agent 调用 `python3 scripts/glossary.py print-terms-for-chunk <temp_dir> chunkNNNN.md`，将输出的 3 列（`原文 | 别名 | 译文`）markdown 表格作为硬性约束注入到该 chunk 的 prompt。术语选取 = (本 chunk 中出现原文或任一别名的术语) ∪ (全书出现频率 top-N 的术语)。
+4. 运行 `python scripts/glossary.py count-frequencies <temp_dir>`，统计每个术语在全书的出现次数（ASCII 术语用单词边界正则，避免 `cat` 误匹配 `category`；中日韩术语用子串匹配；单字汉字术语会被拒绝以防过度匹配；别名也计入所属术语的频次）。
+5. 翻译每个 chunk 之前，主 agent 调用 `python scripts/glossary.py print-terms-for-chunk <temp_dir> chunkNNNN.md`，将输出的 3 列（`原文 | 别名 | 译文`）markdown 表格作为硬性约束注入到该 chunk 的 prompt。术语选取 = (本 chunk 中出现原文或任一别名的术语) ∪ (全书出现频率 top-N 的术语)。
 
 ```json
 {
@@ -187,13 +187,13 @@ Skill 分批启动 subagent（默认 8 路并发）。每个 subagent：
 ### 第三步：合并与构建
 
 ```bash
-python3 scripts/merge_and_build.py --temp-dir book_temp --title "《译后书名》"
+python scripts/merge_and_build.py --temp-dir book_temp --title "《译后书名》"
 ```
 
 可选输出参数：
 
 ```bash
-python3 scripts/merge_and_build.py --temp-dir book_temp --title "《译后书名》" --cover cover.jpg --export-name "译后书名"
+python scripts/merge_and_build.py --temp-dir book_temp --title "《译后书名》" --cover cover.jpg --export-name "译后书名"
 ```
 
 `--cover` 会把显式封面图传给 EPUB 的 Calibre 步骤。`--export-name` 会额外生成如 `译后书名.epub` 的别名副本，同时保留内部 canonical 的 `book.*` 产物。

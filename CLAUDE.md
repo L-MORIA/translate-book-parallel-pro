@@ -23,9 +23,9 @@ translate-book is a Claude Code Skill that translates books (PDF/DOCX/EPUB) into
 Test with a small PDF to verify the full pipeline:
 
 ```bash
-python3 scripts/convert.py /path/to/small.pdf --olang zh
+python scripts/convert.py /path/to/small.pdf --olang zh
 # then run translation via the skill
-python3 scripts/merge_and_build.py --temp-dir <name>_temp --title "test"
+python scripts/merge_and_build.py --temp-dir <name>_temp --title "test"
 ```
 
 Verify: all output_chunk*.md files exist, manifest validation passes, output formats generate.

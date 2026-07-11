@@ -6,7 +6,11 @@ Verifies and installs all prerequisites for the skill.
 Run: python scripts/setup.py
 """
 
-import subprocess, sys, os, platform
+import re
+import subprocess
+import sys
+import os
+import platform
 
 def check_ram():
     """Check available RAM — warn if below safe threshold for PRO parallel translation."""
@@ -26,8 +30,8 @@ def check_ram():
         ok = ram_gb >= 32
         print(f"  {'✅' if ok else '⚠️'} RAM: {ram_gb:.0f} GB {'(OK)' if ok else '(менее 32GB — уменьшите concurrency до 8-12)'}")
         return ok
-    except:
-        print(f"  ➖ RAM: не удалось проверить (по умолчанию concurrency=24)")
+    except (OSError, AttributeError, ValueError):
+        print("  ➖ RAM: не удалось проверить (по умолчанию concurrency=24)")
         return True
 
 def check_cpu():
@@ -37,8 +41,8 @@ def check_cpu():
         ok = cores >= 8
         print(f"  {'✅' if ok else '⚠️'} CPU: {cores} ядер {'(OK)' if ok else '(менее 8 — уменьшите concurrency до 4-8)'}")
         return ok
-    except:
-        print(f"  ➖ CPU: не удалось проверить")
+    except (OSError, ValueError):
+        print("  ➖ CPU: не удалось проверить")
         return True
 
 PASS = "  ✅"
@@ -46,10 +50,15 @@ FAIL = "  ❌"
 SKIP = "  ➖"
 
 def sh(cmd, timeout=30):
+    """Run a command given as a list of args (no shell=True — avoids shell injection).
+
+    Returns (ok, first_line_of_stdout).
+    """
     try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
-        return r.returncode == 0, r.stdout.strip().split('\n')[0]
-    except Exception as e:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        first_line = r.stdout.strip().split('\n')[0] if r.stdout.strip() else ''
+        return r.returncode == 0, first_line
+    except (OSError, subprocess.SubprocessError) as e:
         return False, str(e)
 
 def check_python():
@@ -59,29 +68,28 @@ def check_python():
     return ok
 
 def check_calibre():
-    ok, ver = sh("ebook-convert --version")
+    ok, ver = sh(["ebook-convert", "--version"])
     if ok:
         ver_num = 0
         try:
             # Extract version number from "ebook-convert.exe (calibre 9.11.0)"
-            import re
             m = re.search(r'(\d+)\.(\d+)', ver)
             if m:
                 ver_num = int(m.group(1)) * 100 + int(m.group(2))
-        except:
+        except (ValueError, AttributeError):
             pass
         if ver_num >= 900:
             print(f"{PASS} Calibre: {ver} (≥ 9.x — OK)")
         else:
             print(f"{FAIL} Calibre: {ver} (< 9.x — merge_and_build may hang)")
-            print(f"       Upgrade: winget upgrade calibre.calibre")
+            print("       Upgrade: winget upgrade calibre.calibre")
             return False
     else:
         print(f"{FAIL} Calibre (ebook-convert) not found — install from https://calibre-ebook.com/")
     return ok
 
 def check_pandoc():
-    ok, ver = sh("pandoc --version | head -1")
+    ok, ver = sh(["pandoc", "--version"])
     if ok:
         print(f"{PASS} Pandoc: {ver}")
     else:
@@ -89,9 +97,11 @@ def check_pandoc():
     return ok
 
 def check_pip_module(name):
-    ok, _ = sh(f"python -c \"import {name}; print({name}.__version__)\"")
+    # Use sys.executable so this checks the same interpreter running setup.py,
+    # not whatever "python" happens to resolve to on PATH.
+    code = f"import {name}; print(getattr({name}, '__version__', 'unknown'))"
+    ok, ver = sh([sys.executable, "-c", code])
     if ok:
-        ver = eval(f"__import__('{name}').__version__")
         print(f"{PASS} {name} {ver}")
     else:
         print(f"{FAIL} {name} not installed — run: pip install {name}")
@@ -99,7 +109,13 @@ def check_pip_module(name):
 
 def install_pip(name):
     print(f"  → Installing {name}...", end=" ")
-    ok, out = sh(f"pip install {name}")
+    # --break-system-packages is required on PEP 668 "externally managed"
+    # Python installs (Debian/Ubuntu 23.04+, current Homebrew Python, etc.);
+    # it's a no-op / unrecognized-but-harmless on older pip versions.
+    ok, out = sh([sys.executable, "-m", "pip", "install", "--break-system-packages", name])
+    if not ok:
+        # Fallback for pip versions that reject the unknown flag outright.
+        ok, out = sh([sys.executable, "-m", "pip", "install", name])
     print("OK" if ok else f"FAIL: {out}")
     return ok
 

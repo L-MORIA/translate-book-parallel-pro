@@ -269,7 +269,7 @@ def setup_temp_directory(input_file, html_file, images_dir, temp_root=None):
 
         input_html = os.path.join(temp_dir, "input.html")
         if os.path.exists(input_html):
-            print(f"Skipping HTML copy - input.html already exists")
+            print("Skipping HTML copy - input.html already exists")
         else:
             shutil.copy2(html_file, input_html)
             print(f"Copied HTML to: {input_html}")
@@ -277,7 +277,7 @@ def setup_temp_directory(input_file, html_file, images_dir, temp_root=None):
         if images_dir and os.path.exists(images_dir):
             target_images_dir = os.path.join(temp_dir, "images")
             if os.path.exists(target_images_dir):
-                print(f"Skipping images copy - images directory already exists")
+                print("Skipping images copy - images directory already exists")
             else:
                 shutil.copytree(images_dir, target_images_dir)
                 print(f"Copied images to: {target_images_dir}")
@@ -734,7 +734,7 @@ output_lang={output_lang}
 conversion_method=calibre_htmlz
 """
         if metadata:
-            config_content += f"\n# Book Metadata\n"
+            config_content += "\n# Book Metadata\n"
             if 'title' in metadata:
                 config_content += f"original_title={metadata['title']}\n"
             if 'creator' in metadata:
@@ -861,7 +861,7 @@ def main():
         input_html_path = os.path.join(temp_dir, "input.html")
 
         if os.path.exists(input_html_path):
-            print(f"Skipping HTMLZ conversion - input.html already exists")
+            print("Skipping HTMLZ conversion - input.html already exists")
 
             metadata = {}
             config_file = os.path.join(temp_dir, "config.txt")
@@ -888,7 +888,7 @@ def main():
                 temp_dir,
             )
             if os.path.exists(input_md):
-                print(f"Skipping HTML to Markdown conversion - input.md already exists")
+                print("Skipping HTML to Markdown conversion - input.md already exists")
             else:
                 if not convert_html_to_markdown(input_html_path, input_md, strip_page_numbers=args.strip_page_numbers):
                     sys.exit(1)
@@ -925,7 +925,7 @@ def main():
                 temp_dir,
             )
             if os.path.exists(input_md):
-                print(f"Skipping HTML to Markdown conversion - input.md already exists")
+                print("Skipping HTML to Markdown conversion - input.md already exists")
             else:
                 if not convert_html_to_markdown(input_html, input_md, strip_page_numbers=args.strip_page_numbers):
                     sys.exit(1)

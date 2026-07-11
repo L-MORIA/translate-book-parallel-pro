@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Машина времени</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Машина времени</h1>
+</header>
+<h1 id="машина-времени">Машина времени</h1>
+<p>Изобретение</p>
+<p>Г. Дж. Уэллс</p>
+<p>I. Введение</p>
+<p>Путешественник во Времени (так будет удобно его называть) излагал нам
+запутанный вопрос. Его серые глаза сияли и поблёскивали, а обычно
+бледное лицо раскраснелось и оживилось. Ярко горел камин, и мягкое
+сияние ламп накаливания в серебряных лилиях ловило пузырьки, что
+вспыхивали и исчезали в наших бокалах. Наши кресла, бывшие его
+патентами, обнимали и ласкали нас, а не позволяли на себя садиться, и
+царила та роскошная атмосфера после обеда, когда мысль свободно бежит
+без пут точности. И он изложил это нам таким образом — отмечая пункты
+худым указательным пальцем — пока мы сидели и лениво восхищались его
+серьёзностью над этим новым парадоксом (как мы думали) и его
+плодовитостью.</p>
+<p>«Вы должны внимательно следить за мной. Мне придётся оспорить одну
+или две идеи, которые почти общеприняты. Геометрия, например, которой
+вас учили в школе, основана на недоразумении.»</p>
+<p>«Не слишком ли многого вы от нас ждёте?» — сказал Филби, любитель
+поспорить, человек с рыжими волосами.</p>
+<p>«Не чтобы с этого начать, но чтобы иметь как общее убеждение. Я не
+собираюсь просить вас принять что-либо без разумных оснований. Вы скоро
+признаете столько, сколько мне от вас нужно. Вы знаете, конечно, что
+математическая линия, линия нулевой толщины, не имеет реального
+существования. Вас этому учили? Не имеет и математическая плоскость. Это
+всё лишь абстракции.»</p>
+<p>«Всё верно,» — сказал Психолог.</p>
+<p>«И куб, имея только длину, ширину и высоту, не может иметь реального
+существования.»</p>
+<p>«Тут я возражаю,» — сказал Филби. «Конечно, твёрдое тело может
+существовать. Все реальные вещи —»</p>
+<p>«Так думают большинство. Но подождите минутку. Может ли мгновенный
+куб существовать?»</p>
+<p>«Не понимаю вас,» — сказал Филби.</p>
+<p>«Может ли куб, который не длится ни мгновения, иметь реальное
+существование?»</p>
+<p>Филби задумался. «Ясно,» — продолжил Путешественник во Времени, —
+«любое реальное тело должно иметь протяжённость в четырёх направлениях:
+оно должно иметь Длину, Ширину, Высоту и — Длительность. Но из-за
+естественного изъяна нашей плоти, который я объясню вам через минуту, мы
+склонны упускать этот факт. На самом деле существует четыре измерения,
+три из которых мы называем тремя плоскостями Пространства, и четвёртое —
+Время. Однако есть тенденция проводить искусственное различие между
+первыми тремя измерениями и последним, потому что наше сознание движется
+прерывисто в одном направлении вдоль последнего от начала до конца нашей
+жизни.»</p>
+<p>«Это,» — сказал один очень молодой человек, делая судорожные попытки
+снова зажечь сигару над лампой; «это… очень ясно, действительно.»</p>
+<p>«Что ж, многие серьёзно так думают,» — сказал Путешественник во
+Времени, приложив руку к голове. «Я должен был прочитать проповедь на
+эту тему в Королевском Институте. Вам это кажется таким глупым?»</p>
+<p>«Не глупым,» — сказал Психолог. «Но я не вижу, какое отношение это
+имеет к нашему разговору.»</p>
+<p>«Время — четвёртое измерение. Так же разумно говорить о положении
+человека во Времени, как и о его положении в Пространстве. Вот
+популярная научная диаграмма — карта погоды. Линия, которую я рисую этим
+карандашом, показывает движение барометра вчера и сегодня. Она не
+указывает на какое-либо движение барометра в пространстве. Она ясно
+указывает на изменение его положения во времени.»</p>
+<p>«Но,» — сказал очень молодой человек, — «я не вижу, что ваша
+диаграмма что-либо доказывает.»</p>
+<p>«Нет,» — сказал Путешественник во Времени, — «я не собираюсь ничего
+доказывать этим. Я просто привожу это как иллюстрацию. Возможно,
+причина, по которой об этом четвёртом измерении так мало говорят, в том,
+что у нас нет знакомого названия для него. Но тем не менее —»</p>
+</body>
+</html>

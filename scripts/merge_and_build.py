@@ -298,7 +298,7 @@ def merge_markdown_files(temp_dir):
 
     if os.path.exists(output_md):
         if not ok:
-            print(f"WARNING: output.md exists but manifest validation failed — deleting stale output.md")
+            print("WARNING: output.md exists but manifest validation failed — deleting stale output.md")
             os.remove(output_md)
         else:
             # Check if any output_chunk is newer than output.md (re-translated chunks)
@@ -313,7 +313,7 @@ def merge_markdown_files(temp_dir):
                 print(f"Re-merging — {len(newer_chunks)} chunk(s) newer than output.md: {', '.join(newer_chunks[:5])}{'...' if len(newer_chunks) > 5 else ''}")
                 os.remove(output_md)
             else:
-                print(f"Skipping merge - output.md already exists and is up to date")
+                print("Skipping merge - output.md already exists and is up to date")
                 return True
 
     if not ok:
@@ -694,7 +694,7 @@ def convert_md_to_html(temp_dir, title, lang_cfg, author=None):
     if not _check_generated_html_sanity(book_file):
         return False
 
-    print(f"Generated: output.html, book_doc.html, book.html")
+    print("Generated: output.html, book_doc.html, book.html")
     return True
 
 
@@ -922,7 +922,7 @@ def generate_format(html_file, temp_dir, output_ext, lang_attr, cover=None):
         return None
 
     try:
-        cmd = ["python", publish_script, html_file, "-o", output_file, "--lang", lang_attr]
+        cmd = [sys.executable, publish_script, html_file, "-o", output_file, "--lang", lang_attr]
         if cover:
             cmd.extend(["--cover", cover])
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -1064,7 +1064,7 @@ def main():
     title = args.title or config.get('original_title', 'Translated Book')
     author = args.author or config.get('creator', 'Unknown Author')
 
-    print(f"=== Merge and Build ===")
+    print("=== Merge and Build ===")
     print(f"Temp directory: {temp_dir}")
     print(f"Title: {title}")
     print(f"Author: {author}")
