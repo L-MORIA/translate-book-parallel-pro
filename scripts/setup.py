@@ -156,7 +156,7 @@ def main():
     print("   1. Install skill in Hermes:")
     print("      cp -r translate-book-parallel-pro ${HERMES_HOME:-$HOME/.hermes}/skills/")
     print("   2. /reload-skills in chat")
-    print("   3. Say: переведи D:\\\\book.epub на русский (concurrency=24, chunk_size=15000)")
+    print("   3. Say: переведи /path/to/book.epub на русский (concurrency=24, chunk_size=15000)")
     if not ram_ok:
         print("")
         print("   ⚠️ Low memory detected. Set 'concurrency: 8-12' before translating.")

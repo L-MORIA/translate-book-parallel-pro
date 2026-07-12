@@ -221,7 +221,13 @@ translate-book-parallel/
 │   ├── meta.py                 # Sub-agent observation schema
 │   ├── merge_meta.py           # Glossary merge from sub-agent feedback
 │   ├── run_state.py            # Selective re-translation planner
-│   ├── merge_and_build.py      # Merge → HTML → DOCX/EPUB/PDF
+│   ├── merge_and_build.py      # Merge → HTML → DOCX/EPUB/PDF (thin orchestrator)
+│   ├── _mab_common.py          # Language config, config loader, natural sort
+│   ├── _mab_images.py          # Image reference validation & HTML sanity
+│   ├── _mab_merge.py           # Merge translated chunks → output.md
+│   ├── _mab_html.py            # Markdown→HTML conversion (pandoc → regex)
+│   ├── _mab_toc.py             # Table of contents (BS4 → regex fallback)
+│   ├── _mab_formats.py         # DOCX/EPUB/PDF generation & export aliases
 │   ├── calibre_html_publish.py # Calibre format wrapper
 │   ├── template.html           # Web HTML template with TOC
 │   └── template_ebook.html     # Ebook HTML template

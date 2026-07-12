@@ -14,7 +14,13 @@ translate-book is a Claude Code Skill that translates books (PDF/DOCX/EPUB) into
 - `scripts/meta.py` — Per-chunk sub-agent observation file schema
 - `scripts/merge_meta.py` — Batch-boundary merge of sub-agent observations into the canonical glossary
 - `scripts/run_state.py` — Selective re-translation planner and run_state.json recorder
-- `scripts/merge_and_build.py` — Merge translated chunks → HTML/DOCX/EPUB/PDF
+- `scripts/merge_and_build.py` — Thin orchestrator for merge → HTML → DOCX/EPUB/PDF pipeline
+- `scripts/_mab_common.py` — Language config, config loader, natural sort (shared by `_mab_*`)
+- `scripts/_mab_images.py` — Image reference validation and HTML sanity checks
+- `scripts/_mab_merge.py` — Merge translated chunks into output.md
+- `scripts/_mab_html.py` — Markdown→HTML conversion (pandoc → py-markdown → regex fallback)
+- `scripts/_mab_toc.py` — Table of contents generation (BS4 → regex fallback)
+- `scripts/_mab_formats.py` — DOCX/EPUB/PDF generation and export aliases
 - `scripts/calibre_html_publish.py` — Calibre format conversion wrapper
 - `scripts/template.html`, `scripts/template_ebook.html` — HTML templates
 

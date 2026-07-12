@@ -87,7 +87,7 @@ skill_view(name='translate-book-parallel')
 Once installed, tell Hermes to translate a book in natural language:
 
 ```
-translate D:\books\clean-code.epub to Russian
+translate /path/to/book.epub to Russian
 ```
 
 ```

@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.0 — Refactoring: merge_and_build.py decomposition (2026-07-12)
+
+- **Refactored**: `scripts/merge_and_build.py` split from monolithic 1027-line file into a thin orchestrator + 6 domain-specific `_mab_*` modules:
+  - `_mab_common.py` — language config, config.txt loader, natural sort
+  - `_mab_images.py` — image reference validation and HTML sanity checks
+  - `_mab_merge.py` — chunk merging into output.md
+  - `_mab_html.py` — Markdown→HTML conversion chain (pandoc → py-markdown → regex)
+  - `_mab_toc.py` — table of contents generation (BS4 → regex)
+  - `_mab_formats.py` — DOCX/EPUB/PDF generation and export aliases
+- **Zero behavior change**: all 26 existing tests pass unchanged; public API surface re-exported from `merge_and_build` for mock compatibility
+- **New `--cleanup` flag**: optional removal of intermediate artifacts (chunks, input.html) after successful build (already documented in SKILL.md)
+
 ## v1.1.1 — Calibre ≥ 9.x requirement
 
 - **Discovered**: Calibre 7.0.0 causes timeouts in `merge_and_build` (`ebook-convert` hangs on PDF/EPUB generation via subprocess)

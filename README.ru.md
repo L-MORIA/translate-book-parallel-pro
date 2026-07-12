@@ -87,7 +87,7 @@ skill_view(name='translate-book-parallel')
 После установки скажите Hermes:
 
 ```
-переведи D:\books\clean-code.epub на русский
+переведи /path/to/book.epub на русский
 ```
 
 ```

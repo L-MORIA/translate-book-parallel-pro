@@ -6,6 +6,9 @@ tests/.artifacts/*
 !tests/.artifacts/.gitkeep
 !tests/.artifacts/README.md
 
+# Test output directories
+test-output/
+
 # OS files
 .DS_Store
 
@@ -22,3 +25,4 @@ __pycache__/
 !.claude/commands/
 _bmad/
 test_book/
+.zcode/
