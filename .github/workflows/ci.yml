@@ -28,8 +28,23 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq pandoc
-          wget -qO- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin
+          sudo apt-get install -y -qq \
+            pandoc \
+            calibre \
+            libegl1 libopengl0 libxkbcommon0 libfontconfig1 \
+            libxcb-cursor0 libxcb-xkb1 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-sync1 libxcb-xfixes0 libxcb-xinerama0 \
+            libxcb-xinput0 libxcb-xv0 libxcb-composite0 libxcb-damage0 \
+            libxcb-dpms0 libxcb-glx0 libxcb-record0 libxcb-scrnsaver0 \
+            libxcb-util1 libxcb-xf86dri0 libxcb-xevie0 libxcb-xf86vidmode0 \
+            libxcb-xprint0 libxcb-xselinux0 libxcb-xtest0 libxcb-xv0 \
+            libxcb-xvmc0
+          echo "=== Versions ==="
+          ebook-convert --version 2>/dev/null || echo "calibre not installed via apt, trying official installer..."
+          if ! command -v ebook-convert &>/dev/null; then
+            wget -qO- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin
+          fi
           ebook-convert --version
           pandoc --version | head -1
 
