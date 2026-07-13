@@ -28,7 +28,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq pandoc libegl1 libopengl0
+          sudo apt-get install -y -qq pandoc libegl1 libopengl0 libxcb-cursor0 libxkbcommon0
           sudo wget -qO- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin
           echo "=== Versions ==="
           ebook-convert --version
