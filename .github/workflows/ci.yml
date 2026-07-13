@@ -29,7 +29,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq pandoc
-          sudo -v && wget -qnv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin 2>/dev/null
+          wget -qO- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin
+          ebook-convert --version
+          pandoc --version | head -1
 
       - name: Install Python dependencies
         run: |
