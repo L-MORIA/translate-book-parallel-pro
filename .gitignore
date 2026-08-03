@@ -26,3 +26,8 @@ __pycache__/
 _bmad/
 test_book/
 .zcode/
+
+# Local pandoc runtime (in PATH, not part of repo)
+bin/
+pandoc-*.zip
+pandoc-3.10.1/
