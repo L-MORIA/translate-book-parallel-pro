@@ -31,3 +31,5 @@ test_book/
 bin/
 pandoc-*.zip
 pandoc-3.10.1/
+# gh CLI debug output
+gh-log.txt
