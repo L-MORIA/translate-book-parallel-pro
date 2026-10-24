@@ -30,7 +30,10 @@ def find_calibre_convert():
 
     for path in possible_paths:
         try:
-            result = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                [path, "--version"], capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=10
+            )
             if result.returncode == 0:
                 print(f"Found Calibre ebook-convert: {path}")
                 return path
@@ -45,7 +48,10 @@ def convert_to_htmlz(input_file, htmlz_file, calibre_path):
     try:
         print(f"Converting {input_file} to HTMLZ...")
         cmd = [calibre_path, input_file, htmlz_file]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=600
+        )
 
         if result.returncode == 0:
             file_size = os.path.getsize(htmlz_file)
@@ -401,8 +407,9 @@ def clean_calibre_markers(content, strip_page_numbers=False):
     # Clean heading calibre attribute blocks: {#calibre_link-N .calibreN}
     content = re.sub(r'\s*\{#calibre_link-\d+[^}]*\}', '', content)
 
-    # Clean [**text**] format to **text**
-    content = re.sub(r'\[\*\*([^*]+)\*\*\]', r'**\1**', content)
+    # Clean [**text**] format to **text** — but only when the bracket is not a
+    # link anchor: [**text**](url) and [**text**][ref] must stay intact.
+    content = re.sub(r'\[\*\*([^*]+)\*\*\](?![\[(])', r'**\1**', content)
 
     lines = content.split('\n')
 

@@ -23,7 +23,8 @@ def find_calibre_convert():
     
     for path in possible_paths:
         try:
-            result = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10)
+            result = subprocess.run([path, "--version"], capture_output=True, text=True,
+                                    encoding='utf-8', errors='replace', timeout=10)
             if result.returncode == 0:
                 print(f"Found Calibre ebook-convert: {path}")
                 return path
@@ -255,7 +256,8 @@ def convert_html_with_calibre(html_file, output_file, format_type, timeout=600, 
     
     try:
         print(f"Starting conversion (timeout: {timeout}s)...")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace', timeout=timeout)
         
         if result.returncode == 0:
             if os.path.exists(output_file):

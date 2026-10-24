@@ -48,7 +48,8 @@ def convert_with_pandoc(md_file, html_file, title, lang_attr):
     ]
 
     try:
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True,
+                       encoding='utf-8', errors='replace', check=True)
         print("Converted with pandoc")
         return True
     except subprocess.CalledProcessError as e:
@@ -69,11 +70,12 @@ def convert_with_python_markdown(md_file, html_file, title):
         md = markdown.Markdown(extensions=extensions)
         html_content = md.convert(md_content)
 
+        title_escaped = _html_lib.escape(title, quote=True)
         full_html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>{title}</title>
+<title>{title_escaped}</title>
 </head>
 <body>
 {html_content}
@@ -155,11 +157,12 @@ def convert_with_basic_regex(md_file, html_file, title):
         # Page separators
         html_content = re.sub(r'<p>---</p>', '<div class="page-separator"></div>', html_content)
 
+        title_escaped = _html_lib.escape(title, quote=True)
         full_html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>{title}</title>
+<title>{title_escaped}</title>
 </head>
 <body>
 {html_content}
@@ -174,6 +177,31 @@ def convert_with_basic_regex(md_file, html_file, title):
     except Exception as e:
         print(f"Basic regex conversion failed: {e}")
         return False
+
+
+def sanitize_html_body(body):
+    """Strip active content from book body HTML.
+
+    The body originates from the source book (via Calibre/pandoc/LLM chunks),
+    i.e. from an untrusted file. Pandoc passes inline HTML through, so script
+    blocks, event-handler attributes and javascript: URLs planted in a hostile
+    source would otherwise survive into book.html, which the user opens in a
+    browser.
+    """
+    body = re.sub(r'<script\b[^>]*>.*?</script\s*>', '', body,
+                  flags=re.IGNORECASE | re.DOTALL)
+    body = re.sub(r'<script\b[^>]*/?>', '', body, flags=re.IGNORECASE)
+    body = re.sub(r'\son[a-z]+\s*=\s*"[^"]*"', '', body, flags=re.IGNORECASE)
+    body = re.sub(r"\son[a-z]+\s*=\s*'[^']*'", '', body, flags=re.IGNORECASE)
+    # Consume the whole quoted attribute value (quotes of the other kind may
+    # appear inside it, e.g. href="javascript:alert('x')")
+    body = re.sub(
+        r'(<a\b[^>]*?href\s*=\s*)(["\'])\s*javascript:(?:(?!\2).)*\2',
+        r'\1\2#\2',
+        body,
+        flags=re.IGNORECASE,
+    )
+    return body
 
 
 def apply_template_to_html(html_content, template_file, output_file, title, lang_cfg, author=None):
@@ -196,15 +224,19 @@ def apply_template_to_html(html_content, template_file, output_file, title, lang
             else:
                 full_html = template_content + html_content
 
+        # Title/author come from the source book's OPF metadata — escape before
+        # splicing into HTML so a hostile value can't break out of the markup.
+        title_escaped = _html_lib.escape(title, quote=True)
+
         # Replace all template placeholders
-        full_html = full_html.replace('$title$', title)
+        full_html = full_html.replace('$title$', title_escaped)
         full_html = full_html.replace('$lang$', lang_cfg['lang_attr'])
         full_html = full_html.replace('$body_font$', lang_cfg['font_family'])
         full_html = full_html.replace('$toc_label$', lang_cfg['toc_label'])
 
         # Inject author meta tag into <head> so calibre_html_publish.py can extract it
         if author:
-            author_meta = f'<meta name="author" content="{author}">'
+            author_meta = f'<meta name="author" content="{_html_lib.escape(author, quote=True)}">'
             if '<head>' in full_html or '<head ' in full_html:
                 full_html = re.sub(
                     r'(<head[^>]*>)',
@@ -288,6 +320,7 @@ def convert_md_to_html(temp_dir, title, lang_cfg, author=None):
 
     body_match = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL | re.IGNORECASE)
     body_content = body_match.group(1).strip() if body_match else html_content
+    body_content = sanitize_html_body(body_content)
 
     # Generate book_doc.html with ebook template
     template_ebook = os.path.join(SCRIPT_DIR, 'template_ebook.html')

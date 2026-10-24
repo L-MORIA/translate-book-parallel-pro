@@ -13,8 +13,8 @@ Generated outputs do not belong here. Put them under `tests/.artifacts/`.
 
 | Tier | Baseline | Chunks (target_size=6000) | Inline images | When to run |
 |---|---|---|---|---|
-| Smoke | `sleepy-hollow` | ~21 | 0 (cover only) | Default CI / quick iteration |
-| Gold | `standard-alice` | ~38 | ~45 | Release-gate / image-path coverage |
+| Smoke | `sleepy-hollow` | ~21 | 0 (cover only) | Default CI / quick iteration — wired to CI via `tests/integration_smoke.py` |
+| Gold | `standard-alice` | ~38 | ~45 | Release-gate / image-path coverage — **not checked into git** (11 MB): fetch it on demand, see `standard-alice/SOURCE.md` |
 | Alias-stress (opt-in) | `diligent-dick` | ~57 | 5 | When changing `merge_meta` or `glossary` |
 
 The smoke baseline is the cheapest way to exercise convert → chunk → glossary → merge → build. It deliberately gives up inline-image coverage; use the gold baseline whenever image handling could be affected. The alias-stress baseline is intentionally larger than the gold one because its value lies in `Dick / Richard / Stuart` co-occurring across ~9 consecutive chunks — a contested-variant cross-batch scenario the smaller baselines cannot reproduce.

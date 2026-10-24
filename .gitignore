@@ -9,6 +9,10 @@ tests/.artifacts/*
 # Test output directories
 test-output/
 
+# Gold baseline fixture (11 MB) — fetch on demand, see
+# tests/baselines/standard-alice/SOURCE.md
+tests/baselines/standard-alice/standard-alice.epub
+
 # OS files
 .DS_Store
 

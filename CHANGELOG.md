@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.2.1 — Full audit: security, correctness, tests, repo hygiene (2026-10-25)
+
+- **Fixed** `convert.py`: the `[**bold**]` cleaner no longer corrupts real markdown links (`[**Chapter 1**](url)` stayed intact now)
+- **Fixed** `merge_and_build.py`: exits 1 when output format generation fails (previously exit 0 → launcher reported success on failed builds)
+- **Security**: HTML escaping for title/author from source-book metadata; TOC anchor text escaped; `sanitize_html_body()` strips `<script>` blocks, `on*` event handlers and `javascript:` URLs from generated `book.html`
+- **Fixed** `_mab_toc.py` regex fallback: heading text no longer passed through `re.sub` replacement strings (`\g` crashed the build); attributed headings (`<h2 class=…>`) now get TOC ids; pre-existing pandoc ids are reused instead of duplicated
+- **Fixed** `glossary.py`: word-boundary matching now applies to non-ASCII sources (Cyrillic/Greek/umlauts) — frequencies and per-chunk term injection no longer over-match inside larger words
+- **Fixed** Windows encoding: all `subprocess` captures decode UTF-8 with `errors='replace'`; `setup.py` status output is ASCII (emoji crashed piped runs under cp1251/cp866)
+- **Tests**: 226 → 270. New coverage: `_mab_toc` (was zero), convert chunker (`parse_structural_blocks` / `merge_blocks_to_chunks` / `_force_split_block` / `split_markdown_structured`), manifest merge-time integrity gate (hash mismatch / missing source / short output), `sanitize_html_body` + template escaping
+- **CI**: actions pinned by SHA; Python matrix 3.9–3.13; unit-test matrix no longer installs Calibre (everything is mocked); new `integration` job runs the real pipeline (Calibre → chunks → manifest → simulated translation → merge → HTML → TOC) on the sleepy-hollow baseline via `tests/integration_smoke.py`
+- **Repo hygiene**: removed orphan `hermes-time-machine-test-v2.epub`; 11 MB `standard-alice.epub` fixture untracked (fetch on demand per its `SOURCE.md` — file remains on disk for existing checkouts)
+- **Docs**: install URLs point to `translate-book-parallel-pro`; README Python floor 3.9+ (3.8 is EOL, never tested in CI); `CLAUDE.md` now defers to `AGENTS.md` (was a stale copy describing the pre-fork project); concurrency defaults unified (skill batch default 24, Hermes-side `delegate_task` cap 3); zh-CN README banner notes it describes the original Claude Code skill
+
 ## v1.2.0 — Refactoring: merge_and_build.py decomposition (2026-07-12)
 
 - **Refactored**: `scripts/merge_and_build.py` split from monolithic 1027-line file into a thin orchestrator + 6 domain-specific `_mab_*` modules:

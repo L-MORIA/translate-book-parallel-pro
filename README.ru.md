@@ -45,7 +45,7 @@ HTML / DOCX / EPUB / PDF
 
 | Компонент | Обязательно | Установка |
 |-----------|-------------|-----------|
-| **Python 3.8+** | Да | `python --version` |
+| **Python 3.9+** | Да | `python --version` |
 | **Calibre** (ebook-convert) ≥ 9.x | Да | [calibre-ebook.com](https://calibre-ebook.com/) или `winget upgrade calibre.calibre` |
 | **Pandoc** | Да | `winget install JohnMacFarlane.Pandoc` |
 | **pypandoc** | Да | `pip install pypandoc` |
@@ -63,13 +63,13 @@ python -c "import pypandoc; print('pypandoc ok')"
 
 ```bash
 # 1. Клонировать репозиторий
-git clone https://github.com/L-MORIA/translate-book-parallel.git
+git clone https://github.com/L-MORIA/translate-book-parallel-pro.git
 
 # 2. Установить зависимости
 python scripts/setup.py
 
 # 3. Установить скилл в Hermes
-cp -r translate-book-parallel "${HERMES_HOME:-$HOME/.hermes}/skills/translate-book-parallel"
+cp -r translate-book-parallel-pro "${HERMES_HOME:-$HOME/.hermes}/skills/translate-book-parallel-pro"
 
 # 4. Перезагрузить скиллы
 # Выполнить /reload-skills в чате
@@ -78,7 +78,7 @@ cp -r translate-book-parallel "${HERMES_HOME:-$HOME/.hermes}/skills/translate-bo
 Проверка:
 
 ```bash
-skill_view(name='translate-book-parallel')
+skill_view(name='translate-book-parallel-pro')
 # → readiness_status: available
 ```
 

@@ -28,10 +28,10 @@ def check_ram():
                         ram_gb = int(line.split()[1]) / (1024 * 1024)
                         break
         ok = ram_gb >= 32
-        print(f"  {'✅' if ok else '⚠️'} RAM: {ram_gb:.0f} GB {'(OK)' if ok else '(менее 32GB — уменьшите concurrency до 8-12)'}")
+        print(f"{PASS if ok else WARN} RAM: {ram_gb:.0f} GB {'(OK)' if ok else '(менее 32GB — уменьшите concurrency до 8-12)'}")
         return ok
     except (OSError, AttributeError, ValueError):
-        print("  ➖ RAM: не удалось проверить (по умолчанию concurrency=24)")
+        print(f"{SKIP} RAM: не удалось проверить (по умолчанию concurrency=24)")
         return True
 
 def check_cpu():
@@ -39,15 +39,18 @@ def check_cpu():
     try:
         cores = os.cpu_count() or 0
         ok = cores >= 8
-        print(f"  {'✅' if ok else '⚠️'} CPU: {cores} ядер {'(OK)' if ok else '(менее 8 — уменьшите concurrency до 4-8)'}")
+        print(f"{PASS if ok else WARN} CPU: {cores} ядер {'(OK)' if ok else '(менее 8 — уменьшите concurrency до 4-8)'}")
         return ok
     except (OSError, ValueError):
-        print("  ➖ CPU: не удалось проверить")
+        print(f"{SKIP} CPU: не удалось проверить")
         return True
 
-PASS = "  ✅"
-FAIL = "  ❌"
-SKIP = "  ➖"
+# ASCII status markers — emoji raise UnicodeEncodeError when stdout is piped
+# on Windows (locale codec cp1251/cp866 cannot encode them).
+PASS = "  [OK]"
+FAIL = "  [FAIL]"
+WARN = "  [WARN]"
+SKIP = "  [--]"
 
 def sh(cmd, timeout=30):
     """Run a command given as a list of args (no shell=True — avoids shell injection).
@@ -55,7 +58,8 @@ def sh(cmd, timeout=30):
     Returns (ok, first_line_of_stdout).
     """
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', timeout=timeout)
         first_line = r.stdout.strip().split('\n')[0] if r.stdout.strip() else ''
         return r.returncode == 0, first_line
     except (OSError, subprocess.SubprocessError) as e:
@@ -63,8 +67,8 @@ def sh(cmd, timeout=30):
 
 def check_python():
     v = sys.version_info
-    ok = v.major == 3 and v.minor >= 8
-    print(f"{PASS if ok else FAIL} Python {v.major}.{v.minor}.{v.micro} (need >=3.8)")
+    ok = v.major == 3 and v.minor >= 9
+    print(f"{PASS if ok else FAIL} Python {v.major}.{v.minor}.{v.micro} (need >=3.9)")
     return ok
 
 def check_calibre():
@@ -159,10 +163,10 @@ def main():
     print("   3. Say: переведи /path/to/book.epub на русский (concurrency=24, chunk_size=15000)")
     if not ram_ok:
         print("")
-        print("   ⚠️ Low memory detected. Set 'concurrency: 8-12' before translating.")
+        print("   [WARN] Low memory detected. Set 'concurrency: 8-12' before translating.")
     if not cpu_ok:
         print("")
-        print("   ⚠️ Low core count. Set 'concurrency: 4-8' before translating.")
+        print("   [WARN] Low core count. Set 'concurrency: 4-8' before translating.")
     print("=" * 55 + "\n")
 
 if __name__ == "__main__":

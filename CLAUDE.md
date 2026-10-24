@@ -1,54 +1,11 @@
 # CLAUDE.md
 
-## Project
+Project conventions, structure, testing instructions and rules live in
+[AGENTS.md](AGENTS.md) — read and follow that file. It applies to Claude Code
+the same way as to any other agent working in this repository.
 
-translate-book is a Claude Code Skill that translates books (PDF/DOCX/EPUB) into any language using parallel subagents. Published on ClawHub as `translate-book` and on GitHub as `deusyu/translate-book`.
+## Project (one-line summary)
 
-## Structure
-
-- `SKILL.md` — Skill definition, the orchestration logic that Claude Code / OpenClaw follows
-- `scripts/convert.py` — PDF/DOCX/EPUB → Markdown chunks (via Calibre HTMLZ)
-- `scripts/manifest.py` — SHA-256 chunk tracking and merge validation
-- `scripts/glossary.py` — Term-consistency glossary; per-chunk term tables injected into sub-agent prompts
-- `scripts/chunk_context.py` — Read-only previous/next chunk excerpts injected into sub-agent prompts
-- `scripts/meta.py` — Per-chunk sub-agent observation file schema
-- `scripts/merge_meta.py` — Batch-boundary merge of sub-agent observations into the canonical glossary
-- `scripts/run_state.py` — Selective re-translation planner and run_state.json recorder
-- `scripts/merge_and_build.py` — Thin orchestrator for merge → HTML → DOCX/EPUB/PDF pipeline
-- `scripts/_mab_common.py` — Language config, config loader, natural sort (shared by `_mab_*`)
-- `scripts/_mab_images.py` — Image reference validation and HTML sanity checks
-- `scripts/_mab_merge.py` — Merge translated chunks into output.md
-- `scripts/_mab_html.py` — Markdown→HTML conversion (pandoc → py-markdown → regex fallback)
-- `scripts/_mab_toc.py` — Table of contents generation (BS4 → regex fallback)
-- `scripts/_mab_formats.py` — DOCX/EPUB/PDF generation and export aliases
-- `scripts/calibre_html_publish.py` — Calibre format conversion wrapper
-- `scripts/template.html`, `scripts/template_ebook.html` — HTML templates
-
-## Testing changes
-
-Test with a small PDF to verify the full pipeline:
-
-```bash
-python scripts/convert.py /path/to/small.pdf --olang zh
-# then run translation via the skill
-python scripts/merge_and_build.py --temp-dir <name>_temp --title "test"
-```
-
-Verify: all output_chunk*.md files exist, manifest validation passes, output formats generate.
-
-## Conventions
-
-- Only `chunk*.md` naming — no `page*` legacy support
-- Pipeline output artifacts use the canonical names `book.html`, `book_doc.html`, `book.docx`, `book.epub`, `book.pdf`. Internal scripts and skip/cache logic depend on these names; if title-based filenames are added later they must be optional aliases/copies, not silent replacements
-- SKILL.md frontmatter must stay single-line per field (OpenClaw parser requirement)
-- Script paths in SKILL.md use `{baseDir}` not hardcoded paths
-- Subagent instructions in SKILL.md must be platform-neutral (work on Claude Code, OpenClaw, Codex)
-- README changes must be synced to both README.md and README.zh-CN.md
-- Releases follow `.claude/commands/release.md` — three commands in order: `git push origin main`, `git tag vX.Y.Z && git push --tags`, `npx clawhub@latest publish ./ --version X.Y.Z`. Do not skip the git tag; it's the only version anchor in the repo
-
-## Do not
-
-- Do not reintroduce `page*` file support — it was intentionally removed
-- Do not hardcode `~/.claude/skills/` paths in SKILL.md — use `{baseDir}`
-- Do not put platform-specific tool names (Agent, sessions_spawn) in `allowed-tools` as the only option — keep the whitelist cross-platform
-- Do not add mtime-based incremental rebuild for HTML/format generation — the current skip logic is intentionally simple (existence check). Metadata/template changes require manual cleanup. This is documented in the README.
+**translate-book-parallel-pro** is a Hermes Agent Skill that translates books
+(PDF/DOCX/EPUB) into any language using parallel sub-agents (`delegate_task`).
+Ported from `deusyu/translate-book` (Rainman Translate Book).

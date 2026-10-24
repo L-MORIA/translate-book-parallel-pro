@@ -51,8 +51,9 @@
 │  output_chunk01  output_chunk02  output_chunk03   output_chunkN   │
 │  output_chunk01.meta.json  ...  (sub-agent observations)          │
 │                                                                     │
-│  Batching: up to concurrency sub-agents per batch (default: 8)     │
-│  Hermes delegate_task: max 3 concurrent (configurable)             │
+│  Batching: up to concurrency sub-agents per batch (default: 24)    │
+│  Hermes delegate_task: max 3 concurrent (Hermes-side cap,          │
+│  configurable via delegation.max_concurrent_children)              │
 │  Each sub-agent gets:                                              │
 │    • 1 chunk file (read)                                           │
 │    • target language                                               │
@@ -236,6 +237,7 @@ translate-book-parallel/
 │   │   ├── standard-alice/
 │   │   ├── sleepy-hollow/
 │   │   └── diligent-dick/
-│   └── test_*.py               # Unit tests (226 total)
+│   ├── integration_smoke.py  # CI smoke gate on the sleepy-hollow baseline
+│   └── test_*.py               # Unit tests (270 total)
 └── LICENSE
 ```

@@ -2,12 +2,14 @@
 """_mab_toc.py — Generate and insert a table of contents into book.html.
 
 Two implementations (BeautifulSoup primary, regex fallback) selected by
-availability of bs4 at import time. Extracted verbatim from merge_and_build.py
-(no behavior change).
+availability of bs4 at import time. Extracted from merge_and_build.py; TOC
+anchor text is HTML-escaped (heading text comes from the untrusted source
+book) and the regex fallback inserts ids via a re.sub callback.
 """
 
 import os
 import re
+import html as _html_lib
 
 # Try to import BeautifulSoup for TOC generation
 try:
@@ -61,7 +63,10 @@ def generate_simple_toc_html(toc_data):
                 toc_html += '</ul></li>\n'
                 current_level -= 1
 
-        toc_html += f'<li><a href="#{heading_id}">{text}</a></li>\n'
+        # Heading text comes from the (untrusted) source book — escape it so
+        # it renders as text, never as markup inside the TOC.
+        text_escaped = _html_lib.escape(text, quote=True)
+        toc_html += f'<li><a href="#{heading_id}">{text_escaped}</a></li>\n'
 
     while current_level > 1:
         toc_html += '</ul></li>\n'
@@ -130,39 +135,55 @@ def insert_toc_with_regex(html_file):
         print(f"Error reading HTML file: {e}")
         return False
 
-    heading_pattern = r'<(h[1-6])(?:[^>]*)>(.*?)</\1>'
-    headings = re.findall(heading_pattern, html_content, re.IGNORECASE | re.DOTALL)
-
-    if not headings:
+    heading_pattern = re.compile(r'<(h[1-6])([^>]*)>(.*?)</\1>',
+                                 re.IGNORECASE | re.DOTALL)
+    if not heading_pattern.search(html_content):
         print("No headings found for TOC")
         return False
 
-    toc_html = '<ul>\n'
-    for i, (tag, text) in enumerate(headings):
+    # Insert ids and collect TOC entries in a single pass. A re.sub callback
+    # (not a replacement string) is required: heading text is untrusted and
+    # may contain backslash sequences (\g, \1) that would otherwise crash
+    # re.sub or splice match groups into the document.
+    toc_entries = []
+    seen = [0]
+
+    def _number_heading(match):
+        tag, attrs, text = match.group(1), match.group(2), match.group(3)
+        seen[0] += 1
         level = int(tag[1])
         clean_text = re.sub(r'<[^>]+>', '', text).strip()
-        heading_id = f"heading-{i+1}"
 
-        old_heading = f'<{tag}>{text}</{tag}>'
-        new_heading = f'<{tag} id="{heading_id}">{text}</{tag}>'
-        html_content = html_content.replace(old_heading, new_heading, 1)
+        # pandoc often pre-assigns heading ids — reuse them instead of adding
+        # a duplicate id attribute
+        existing_id = re.search(r'\bid\s*=\s*("|\')(.*?)\1', attrs, re.IGNORECASE)
+        if existing_id and existing_id.group(2):
+            heading_id = existing_id.group(2)
+            replacement = match.group(0)
+        else:
+            heading_id = f"heading-{seen[0]}"
+            replacement = f'<{tag}{attrs} id="{heading_id}">{text}</{tag}>'
 
-        if level > 1:
-            for _ in range(level - 1):
-                toc_html += '  '
-        toc_html += f'<li><a href="#{heading_id}">{clean_text}</a></li>\n'
+        indent = '  ' * (level - 1)
+        toc_entries.append(
+            f'{indent}<li><a href="#{heading_id}">'
+            f'{_html_lib.escape(clean_text, quote=True)}</a></li>\n'
+        )
+        return replacement
 
-    toc_html += '</ul>\n'
+    html_content = heading_pattern.sub(_number_heading, html_content)
+
+    toc_html = '<ul>\n' + ''.join(toc_entries) + '</ul>\n'
 
     toc_content_pattern = r'(<div[^>]*class="toc-content[^"]*"[^>]*>).*?(</div>)'
     if re.search(toc_content_pattern, html_content, re.DOTALL):
         html_content = re.sub(
             toc_content_pattern,
-            r'\1' + toc_html + r'\2',
+            lambda m: m.group(1) + toc_html + m.group(2),
             html_content,
             flags=re.DOTALL
         )
-        print(f"TOC inserted ({len(headings)} headings)")
+        print(f"TOC inserted ({seen[0]} headings)")
     else:
         print("Warning: .toc-content div not found")
         return False

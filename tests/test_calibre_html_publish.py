@@ -20,7 +20,7 @@ class ConvertHtmlWithCalibreTests(unittest.TestCase):
             output_file = Path(temp_dir) / "output.epub"
             input_html.write_text("<html><head><title>Book</title></head></html>", encoding="utf-8")
 
-            def fake_run(cmd, capture_output, text, timeout):
+            def fake_run(cmd, capture_output, text, timeout, **kwargs):
                 output_file.write_text("epub", encoding="utf-8")
                 return mock.Mock(returncode=0, stderr="")
 
@@ -60,7 +60,7 @@ class ConvertHtmlWithCalibreTests(unittest.TestCase):
             input_html.write_text("<html><head><title>Book</title></head></html>", encoding="utf-8")
             cover_file.write_text("img", encoding="utf-8")
 
-            def fake_run(cmd, capture_output, text, timeout):
+            def fake_run(cmd, capture_output, text, timeout, **kwargs):
                 output_file.write_text("epub", encoding="utf-8")
                 return mock.Mock(returncode=0, stderr="")
 

@@ -459,5 +459,177 @@ class SourceFingerprintCacheTests(unittest.TestCase):
         self.assertEqual(status, "adopt")
 
 
+class LinkPreservingMarkerTests(unittest.TestCase):
+    def test_bold_brackets_still_cleaned(self):
+        cleaned = convert.clean_calibre_markers("[**Chapter One**]")
+        self.assertEqual(cleaned, "**Chapter One**")
+
+    def test_real_markdown_links_with_bold_anchors_survive(self):
+        # Regression: the cleaner used to turn [**Chapter 1**](chapter1.xhtml)
+        # into **Chapter 1**(chapter1.xhtml), silently corrupting TOC links
+        # that Calibre/pandoc emit for almost every book.
+        content = "[**Chapter 1**](chapter1.xhtml)\n\n[**Chapter 2**][ref]\n"
+        cleaned = convert.clean_calibre_markers(content)
+
+        self.assertIn("[**Chapter 1**](chapter1.xhtml)", cleaned)
+        self.assertIn("[**Chapter 2**][ref]", cleaned)
+
+
+class ParseStructuralBlocksTests(unittest.TestCase):
+    def test_classifies_common_block_types(self):
+        content = "\n".join([
+            "# Title",
+            "",
+            "Para one",
+            "continues here.",
+            "",
+            "```python",
+            "code = 1",
+            "```",
+            "",
+            "> quoted line",
+            "> more quote",
+            "",
+            "| a | b |",
+            "|---|---|",
+            "",
+            "- item one",
+            "- item two",
+            "",
+            "![img](pic.png)",
+            "",
+            "Final para.",
+        ])
+
+        blocks = convert.parse_structural_blocks(content)
+        types = [btype for _, btype in blocks]
+
+        for expected in ("heading", "code_block", "blockquote", "table", "list", "image", "paragraph"):
+            self.assertIn(expected, types)
+
+    def test_paragraph_lines_stay_together(self):
+        blocks = convert.parse_structural_blocks("Line one\nLine two\n")
+        paragraphs = [text for text, btype in blocks if btype == "paragraph" and text.strip()]
+        self.assertEqual(paragraphs, ["Line one\nLine two"])
+
+    def test_fenced_code_block_never_split_by_other_rules(self):
+        content = "```text\n# not a heading\n> not a quote\n- not a list\n```\n"
+        blocks = convert.parse_structural_blocks(content)
+        # Trailing newline may yield a final empty paragraph block; the code
+        # block itself must be captured whole and classified as code.
+        self.assertEqual(
+            blocks[0],
+            ("```text\n# not a heading\n> not a quote\n- not a list\n```", "code_block"),
+        )
+        self.assertTrue(all(btype != "heading" and btype != "list" for _, btype in blocks))
+
+
+class MergeBlocksToChunksTests(unittest.TestCase):
+    def test_splits_at_heading_boundaries(self):
+        # 100-word paragraph (~500 chars) fits inside target_size together
+        # with its heading, so each chapter packs into one chunk
+        chapter = "# Chapter\n\n" + ("word " * 100).strip() + "\n\n"
+        content = chapter * 2
+        blocks = convert.parse_structural_blocks(content)
+        chunks = convert.merge_blocks_to_chunks(blocks, target_size=600)
+
+        self.assertEqual(len(chunks), 2)
+        self.assertTrue(chunks[0].startswith("# Chapter"))
+        self.assertTrue(chunks[1].startswith("# Chapter"))
+
+    def test_small_content_stays_single_chunk(self):
+        blocks = convert.parse_structural_blocks("# H\n\ntext\n")
+        chunks = convert.merge_blocks_to_chunks(blocks, target_size=6000)
+        self.assertEqual(len(chunks), 1)
+
+    def test_no_content_loss_on_merge(self):
+        content = "\n\n".join(
+            f"# Chapter {i}\n\n" + ("word " * 30).strip() for i in range(1, 11)
+        )
+        blocks = convert.parse_structural_blocks(content)
+        chunks = convert.merge_blocks_to_chunks(blocks, target_size=200)
+
+        self.assertGreater(len(chunks), 1)
+        rejoined_word_count = sum(chunk.split().count("word") for chunk in chunks)
+        self.assertEqual(rejoined_word_count, content.count("word"))
+        rejoined_heading_count = sum(chunk.count("# Chapter") for chunk in chunks)
+        self.assertEqual(rejoined_heading_count, 10)
+
+
+class ForceSplitBlockTests(unittest.TestCase):
+    def test_splits_oversized_paragraph_by_blank_lines(self):
+        text = "\n\n".join(" ".join(["word"] * 50) for _ in range(6))
+        parts = convert._force_split_block(text, target_size=200)
+
+        self.assertGreater(len(parts), 1)
+        rejoined = "\n\n".join(parts)
+        self.assertEqual(rejoined.count("word"), text.count("word"))
+
+    def test_long_single_lines_split_by_lines(self):
+        # No blank lines, so paragraph-splitting is skipped and the block is
+        # split at line granularity
+        text = "\n".join(" ".join(["word"] * 50) for _ in range(4))
+        parts = convert._force_split_block(text, target_size=200)
+
+        self.assertGreater(len(parts), 1)
+        self.assertEqual("\n".join(parts), text)
+
+    def test_single_unbroken_line_returned_as_is(self):
+        # A single line with no separators cannot be split at line granularity
+        # — the block is returned whole (documented limitation).
+        text = " ".join(["word"] * 100)
+        parts = convert._force_split_block(text, target_size=200)
+
+        self.assertEqual(parts, [text])
+
+    def test_code_blocks_keep_valid_fences_per_chunk(self):
+        body_lines = "\n".join(f"print({i})" for i in range(100))
+        code = f"```python\n{body_lines}\n```"
+        parts = convert._force_split_block(code, target_size=200)
+
+        self.assertGreater(len(parts), 1)
+        for part in parts:
+            self.assertTrue(part.startswith("```python"))
+            self.assertTrue(part.endswith("```"))
+        rejoined_body = "\n".join(
+            "\n".join(part.split("\n")[1:-1]) for part in parts
+        )
+        self.assertEqual(rejoined_body, body_lines)
+
+
+class SplitMarkdownStructuredTests(unittest.TestCase):
+    def test_end_to_end_split_preserves_all_content(self):
+        content = "\n\n".join(
+            f"# Chapter {i}\n\n" + ("sentence " * 80).strip() for i in range(1, 6)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file = Path(tmp) / "input.md"
+            md_file.write_text(content, encoding="utf-8")
+
+            chunk_files = convert.split_markdown_structured(
+                str(md_file), tmp, target_size=600
+            )
+
+            self.assertGreaterEqual(len(chunk_files), 2)
+            self.assertEqual(chunk_files[0], "chunk0001.md")
+            rejoined = "\n".join(
+                (Path(tmp) / name).read_text(encoding="utf-8") for name in chunk_files
+            )
+            self.assertEqual(rejoined.count("sentence"), content.count("sentence"))
+            self.assertEqual(rejoined.count("# Chapter"), 5)
+
+    def test_empty_file_produces_single_empty_chunk(self):
+        # Documented edge behavior: empty input yields one empty chunk file
+        # (later merge validation rejects blank translations for it).
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file = Path(tmp) / "input.md"
+            md_file.write_text("", encoding="utf-8")
+
+            chunk_files = convert.split_markdown_structured(str(md_file), tmp)
+
+            self.assertEqual(chunk_files, ["chunk0001.md"])
+            self.assertEqual((Path(tmp) / "chunk0001.md").read_text(encoding="utf-8"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

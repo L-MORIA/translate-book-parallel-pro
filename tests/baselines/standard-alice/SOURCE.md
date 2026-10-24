@@ -6,6 +6,24 @@ Full-pipeline baseline input for this repository.
 - Source: Standard Ebooks edition of *Alice's Adventures in Wonderland*
 - Why this baseline: stable EPUB structure, chaptered prose, recurring entities, and many illustrations, which makes it useful for exercising convert, chunking, translation, merge, and final format generation.
 
+## Getting the file (not checked into git)
+
+The 11 MB fixture is not tracked — fetch it on demand from
+<https://standardebooks.org/ebooks/lewis-carroll/alices-adventures-in-wonderland>
+("Compatible epub" download) and place it at
+`tests/baselines/standard-alice/standard-alice.epub`:
+
+```bash
+curl -L -o tests/baselines/standard-alice/standard-alice.epub \
+  "https://standardebooks.org/ebooks/lewis-carroll/alices-adventures-in-wonderland/downloads/alices_adventures_in_wonderland.epub"
+```
+
+Verify against the measured run: `source_hash` in `manifest.json` was
+`6b1ea8ca29311ff8c43740b5a87d3fcfe0b906eb69bdcc74585d81a280f40c09`
+(`sha256sum standard-alice.epub`). Standard Ebooks occasionally re-renders
+its files — if the hash differs, the Measured values below must be
+re-validated before use as pass/fail assertions.
+
 Run the repository baseline test from `tests/.artifacts/` so generated files stay out of the repo root:
 
 ```bash

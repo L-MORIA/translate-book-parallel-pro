@@ -88,6 +88,69 @@ class ValidateForMergeTests(unittest.TestCase):
         self.assertIn("Missing output", out)
 
 
+class ValidateForMergeIntegrityTests(unittest.TestCase):
+    """The merge-time integrity gate: stale sources and missing source chunks
+    must block the merge, and abnormally short outputs must warn."""
+
+    def _write(self, path, content):
+        Path(path).write_text(content, encoding="utf-8")
+
+    def _workspace(self, tmp):
+        temp_dir = Path(tmp)
+        self._write(temp_dir / "input.md", "Source text one.\n\nSource text two.\n")
+        self._write(temp_dir / "chunk0001.md", "Source text one.\n")
+        self._write(temp_dir / "chunk0002.md", "Source text two.\n")
+        self._write(temp_dir / "output_chunk0001.md", "译文一。\n")
+        self._write(temp_dir / "output_chunk0002.md", "译文二。\n")
+        manifest.create_manifest(
+            str(temp_dir),
+            ["chunk0001.md", "chunk0002.md"],
+            str(temp_dir / "input.md"),
+        )
+        return temp_dir
+
+    def _validate(self, temp_dir):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ok, ordered, warnings = manifest.validate_for_merge(str(temp_dir))
+        return ok, ordered, warnings, buf.getvalue()
+
+    def test_rejects_source_changed_after_splitting(self):
+        # A source chunk edited after manifest creation means outputs were
+        # translated from different bytes — merging would silently mix them.
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = self._workspace(tmp)
+            self._write(temp_dir / "chunk0002.md", "Tampered source text.\n")
+            ok, ordered, _, out = self._validate(temp_dir)
+
+        self.assertFalse(ok)
+        self.assertIsNone(ordered)
+        self.assertIn("Source changed since splitting", out)
+        self.assertIn("chunk0002.md", out)
+
+    def test_rejects_missing_source_chunk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = self._workspace(tmp)
+            (temp_dir / "chunk0001.md").unlink()
+            ok, ordered, _, out = self._validate(temp_dir)
+
+        self.assertFalse(ok)
+        self.assertIsNone(ordered)
+        self.assertIn("Missing source", out)
+        self.assertIn("chunk0001.md", out)
+
+    def test_warns_on_suspiciously_short_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = self._workspace(tmp)
+            self._write(temp_dir / "output_chunk0001.md", "x")
+            ok, ordered, warnings, out = self._validate(temp_dir)
+
+        self.assertTrue(ok)
+        self.assertEqual(len(ordered), 2)
+        self.assertTrue(any("Suspiciously short" in w for w in warnings))
+        self.assertIn("Suspiciously short", out)
+
+
 class ReadOutputTextTests(unittest.TestCase):
     def test_returns_text_for_utf8_file(self):
         with tempfile.TemporaryDirectory() as tmp:

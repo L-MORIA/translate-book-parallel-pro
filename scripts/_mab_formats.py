@@ -68,7 +68,8 @@ def generate_format(html_file, temp_dir, output_ext, lang_attr, cover=None):
         cmd = [sys.executable, publish_script, html_file, "-o", output_file, "--lang", lang_attr]
         if cover:
             cmd.extend(["--cover", cover])
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace')
 
         if os.path.exists(output_file):
             file_size = os.path.getsize(output_file)

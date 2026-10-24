@@ -195,6 +195,11 @@ def main():
         else:
             print("\nSkipping cleanup — some formats failed. Intermediate files kept for diagnosis/retry.")
 
+    # A failed format must fail the build: launchers and CI key on the exit code.
+    if not all_formats_ok:
+        print("\nSome output formats failed to generate — see errors above.")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

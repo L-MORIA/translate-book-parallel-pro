@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+> **注意**：本仓库是 **Hermes Agent 移植版**（`translate-book-parallel-pro`，并行子代理、术语表驱动、断点续跑）。本中文文档继承自原 Claude Code 项目，描述的是原版用法；最新安装与用法请以 [English README](README.md) / [Русский README](README.ru.md) 为准。
+
 Claude Code Skill，使用并行 subagent 将整本书（PDF/DOCX/EPUB）翻译成任意语言。
 
 > 本项目受 [claude_translater](https://github.com/wizlijun/claude_translater) 启发。原项目以 shell 脚本为入口，配合 Claude CLI 和多个步骤脚本完成分块翻译；本项目则将流程重构为 Claude Code Skill，使用 subagent 按 chunk 并行翻译，并引入 manifest 驱动的完整性校验，将续跑和多格式输出整合为更统一的流水线。由于项目结构和实现方式均与原项目不同，本项目为独立实现，而非 fork。
@@ -71,7 +73,8 @@ clawhub install translate-book
 **方式 C：Git 克隆**
 
 ```bash
-git clone https://github.com/deusyu/translate-book.git ~/.claude/skills/translate-book
+git clone https://github.com/L-MORIA/translate-book-parallel-pro.git \
+  "${HERMES_HOME:-$HOME/.hermes}/skills/translate-book-parallel-pro"
 ```
 
 

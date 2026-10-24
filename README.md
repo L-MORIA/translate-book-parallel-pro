@@ -45,7 +45,7 @@ Each chunk gets its own independent sub-agent with a fresh context window. This 
 
 | Dependency | Required | Install |
 |-----------|----------|---------|
-| **Python 3.8+** | Yes | `python --version` |
+| **Python 3.9+** | Yes | `python --version` |
 | **Calibre** (ebook-convert) ≥ 9.x | Yes | [calibre-ebook.com](https://calibre-ebook.com/) or `winget upgrade calibre.calibre` |
 | **Pandoc** | Yes | `winget install JohnMacFarlane.Pandoc` |
 | **pypandoc** | Yes | `pip install pypandoc` |
@@ -63,13 +63,13 @@ python -c "import pypandoc; print('pypandoc ok')"
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/L-MORIA/translate-book-parallel.git
+git clone https://github.com/L-MORIA/translate-book-parallel-pro.git
 
 # 2. Install dependencies
 python scripts/setup.py
 
 # 3. Install the skill in Hermes
-cp -r translate-book-parallel "${HERMES_HOME:-$HOME/.hermes}/skills/translate-book-parallel"
+cp -r translate-book-parallel-pro "${HERMES_HOME:-$HOME/.hermes}/skills/translate-book-parallel-pro"
 
 # 4. Reload skills in Hermes
 # Run /reload-skills in the chat
@@ -78,7 +78,7 @@ cp -r translate-book-parallel "${HERMES_HOME:-$HOME/.hermes}/skills/translate-bo
 Verify:
 
 ```bash
-skill_view(name='translate-book-parallel')
+skill_view(name='translate-book-parallel-pro')
 # → readiness_status: available
 ```
 
@@ -138,6 +138,12 @@ Language codes are extensible — add new ones to the skill triggers in `SKILL.m
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full pipeline diagram and component descriptions.
+
+## Known Issues
+
+- **Memory:** with `concurrency > 1` on systems with 8 GB RAM, memory exhaustion is possible.
+  Workaround: use `concurrency: 1` in the translation configuration.
+  `scripts/setup.py` includes a built-in RAM check.
 
 ## What Was Changed from Original
 

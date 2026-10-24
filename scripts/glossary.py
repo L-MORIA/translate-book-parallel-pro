@@ -397,20 +397,19 @@ def save_glossary(path, glossary):
 
 
 def _count_in_text(source, text):
-    """Count occurrences of source in text. CJK uses substring; ASCII uses
-    boundary-aware regex so 'C++' and '.NET' work and 'cat' doesn't match
-    'category'."""
+    """Count occurrences of source in text. CJK uses substring; everything else
+    uses boundary-aware regex so 'C++' and '.NET' work and 'cat' doesn't match
+    'category'. \\w is Unicode-aware, so Cyrillic/Greek/etc. sources get proper
+    word boundaries too."""
     if not source:
         return 0
     if _contains_cjk(source):
         if len(source) <= 1:
             return 0
         return text.count(source)
-    if source.isascii():
-        escaped = re.escape(source)
-        pattern = rf'(?<!\w){escaped}(?!\w)'
-        return len(re.findall(pattern, text))
-    return text.count(source)
+    escaped = re.escape(source)
+    pattern = rf'(?<!\w){escaped}(?!\w)'
+    return len(re.findall(pattern, text))
 
 
 def _appears_in_text(source, text):

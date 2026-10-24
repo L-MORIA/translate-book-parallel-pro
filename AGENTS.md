@@ -30,7 +30,7 @@
 - Python: `python` (not `python3`) — Hermes venv compatibility
 - All script invocations use `python` not `python3`
 - Shebangs: `#!/usr/bin/env python` not `#!/usr/bin/env python3`
-- Max 3 concurrent sub-agents by default (configurable via `delegation.max_concurrent_children` in `config.yaml`)
+- Max 3 concurrent sub-agents via `delegate_task` by default (configurable via `delegation.max_concurrent_children` in `config.yaml`); the skill's batch `concurrency` default is 24
 
 ## Testing changes
 
@@ -44,7 +44,7 @@ python scripts/convert.py /path/to/small.epub --olang zh
 python scripts/merge_and_build.py --temp-dir <name>_temp --title "test"
 ```
 
-Full baseline test:
+Full baseline test (`standard-alice.epub` is not checked into git — fetch it first, see `tests/baselines/standard-alice/SOURCE.md`; the CI smoke gate `tests/integration_smoke.py` uses the smaller `sleepy-hollow` baseline):
 
 ```bash
 mkdir -p tests/.artifacts
@@ -63,6 +63,12 @@ Unit tests:
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
+Integration smoke gate (needs real `ebook-convert` + `pandoc` on PATH):
+
+```bash
+python tests/integration_smoke.py
+```
+
 ## Conventions
 
 - Only `chunk*.md` naming — no `page*` legacy support
@@ -70,7 +76,7 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 - Script paths in SKILL.md use `{baseDir}` not hardcoded paths
 - Sub-agent instructions in SKILL.md must be platform-neutral (work on Hermes, Codex, OpenClaw)
 - Checked-in baseline inputs live under `tests/baselines/<book-id>/`; generated full-pipeline outputs live under `tests/.artifacts/`
-- Releases: `git push origin main && git tag vX.Y.Z && git push --tags`
+- Releases: `git push origin master && git tag vX.Y.Z && git push --tags`
 
 ## Do not
 
