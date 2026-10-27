@@ -578,11 +578,23 @@ def parse_structural_blocks(content):
     return blocks
 
 
+# A heading closes the current chunk only once that chunk is at least this
+# fraction full. Breaking at every heading made --chunk-size a pure upper bound:
+# a book with a heading every ~500 characters produced one tiny chunk per
+# heading (10 sections x 520 chars at --chunk-size 15000 -> 10 chunks of 513),
+# multiplying sub-agent count, cost and time while starving each sub-agent of
+# the context it needs to translate coherently.
+HEADING_BREAK_FRACTION = 0.5
+
+
 def merge_blocks_to_chunks(blocks, target_size=6000):
     """Merge structural blocks into chunks respecting target_size.
 
-    Prefers to split at heading boundaries. Never splits within a single
-    structural block unless the block itself exceeds target_size * 2.
+    Headings are preferred split points, not mandatory ones: a heading only
+    closes the current chunk when that chunk is at least HEADING_BREAK_FRACTION
+    full, so a run of short sections packs into one chunk instead of producing
+    one chunk per heading. Never splits within a single structural block unless
+    the block itself exceeds target_size * 2.
     """
     chunks = []
     current_parts = []
@@ -606,8 +618,9 @@ def merge_blocks_to_chunks(blocks, target_size=6000):
             chunks.extend(sub_chunks)
             continue
 
-        # Prefer to split at heading boundaries
-        if btype == 'heading' and current_size > 0:
+        # Prefer to split at heading boundaries, but only once the chunk is
+        # reasonably full - see HEADING_BREAK_FRACTION.
+        if btype == 'heading' and current_size >= target_size * HEADING_BREAK_FRACTION:
             flush()
 
         # Would adding this block exceed target?
@@ -759,13 +772,24 @@ def _find_existing_chunk_files(temp_dir):
 
 
 def _chunk_set_problems(temp_dir, existing, input_md, chunk_size):
-    """Return the reasons `existing` is not a trustworthy reuse of a past split.
+    """Return (problems, same_split) for the existing chunk set.
 
-    An empty list means the whole set is present, contiguous and byte-identical
-    to what a fresh split of input.md at `chunk_size` would produce. Any other
-    result means rebuilding from these chunks would silently drop book text.
+    `problems` lists the reasons `existing` is not a trustworthy reuse of a past
+    split. An empty list means the whole set is present, contiguous and
+    byte-identical to what a fresh split of input.md at `chunk_size` would
+    produce. Any other result means rebuilding from these chunks would silently
+    drop book text.
+
+    `same_split` says whether the files that do exist still match the current
+    split at their own number. True means this is a damaged copy of the current
+    split (interrupted write, manual deletion): regenerating from input.md
+    reproduces the same boundaries, so existing output_chunk*.md translations
+    stay attached to the text they belong to. False means the files were
+    produced by another --chunk-size or an older splitter: re-splitting moves
+    every boundary, and stale translations would end up on the wrong text.
     """
     problems = []
+    same_split = True
 
     numbers = []
     for name in existing:
@@ -774,11 +798,9 @@ def _chunk_set_problems(temp_dir, existing, input_md, chunk_size):
             problems.append(f"{name} is not a chunkNNNN.md file")
         else:
             numbers.append(int(match.group(1)))
-    if problems:
-        return problems
 
     numbers.sort()
-    if numbers != list(range(1, len(numbers) + 1)):
+    if numbers and numbers != list(range(1, len(numbers) + 1)):
         missing = sorted(set(range(1, numbers[-1] + 1)) - set(numbers))
         shown = ", ".join(f"chunk{number:04d}.md" for number in missing[:5])
         if len(missing) > 5:
@@ -795,7 +817,7 @@ def _chunk_set_problems(temp_dir, existing, input_md, chunk_size):
     if not os.path.exists(input_md):
         # Nothing to compare against; contiguity is all we can check.
         print(f"Warning: {input_md} not found - reusing chunks without a content check")
-        return problems
+        return problems, same_split
 
     source_bytes = os.path.getsize(input_md)
     chunk_bytes = sum(os.path.getsize(os.path.join(temp_dir, name)) for name in existing)
@@ -816,31 +838,44 @@ def _chunk_set_problems(temp_dir, existing, input_md, chunk_size):
         expected_texts = split_markdown_text(content, chunk_size)
     except (OSError, UnicodeDecodeError) as e:
         problems.append(f"cannot re-read {input_md} to verify the chunk set ({e})")
-        return problems
+        return problems, same_split
 
     if len(expected_texts) != len(existing):
         problems.append(
             f"{len(existing)} chunk file(s) on disk, but a fresh split at "
             f"--chunk-size {chunk_size} produces {len(expected_texts)}"
         )
-        return problems
 
-    for name, expected_text in zip(existing, expected_texts):
+    # Compare every surviving file against the canonical text at its own
+    # number, even when the counts disagree: that is what separates "damaged
+    # copy of this split" (safe to regenerate) from "built by another
+    # splitter" (regenerating would shift every boundary).
+    for name in existing:
+        match = _CHUNK_NAME_RE.match(name)
+        if match is None:
+            # Not part of the split; already reported above.
+            continue
+        number = int(match.group(1))
         try:
             with open(os.path.join(temp_dir, name), 'r', encoding='utf-8') as f:
                 actual_text = f.read()
         except (OSError, UnicodeDecodeError) as e:
             problems.append(f"cannot read {name} ({e})")
+            same_split = False
             continue
-        if actual_text != expected_text:
+
+        expected_text = expected_texts[number - 1] if number <= len(expected_texts) else None
+        if expected_text != actual_text:
+            same_split = False
+            expected_size = len(expected_text) if expected_text is not None else 0
             problems.append(
                 f"{name} differs from a fresh split of input.md "
-                f"({len(actual_text):,} chars vs {len(expected_text):,} expected) - "
-                f"truncated or edited"
+                f"({len(actual_text):,} chars vs {expected_size:,} expected) - "
+                f"truncated, edited, or built with another --chunk-size"
             )
             break
 
-    return problems
+    return problems, same_split
 
 
 def create_config_file(temp_dir, input_file, input_lang, output_lang, metadata=None):
@@ -886,7 +921,9 @@ def _do_split_and_manifest(temp_dir, input_md, chunk_size):
     """
     existing = _find_existing_chunk_files(temp_dir)
     if existing:
-        problems = _chunk_set_problems(temp_dir, existing, input_md, chunk_size)
+        problems, same_split = _chunk_set_problems(
+            temp_dir, existing, input_md, chunk_size
+        )
         if problems:
             print(
                 f"Error: refusing to reuse the {len(existing)} existing chunk file(s) "
@@ -894,15 +931,40 @@ def _do_split_and_manifest(temp_dir, input_md, chunk_size):
             )
             for problem in problems:
                 print(f"  - {problem}")
-            print(
-                "Reusing them would build a book with missing or truncated text.\n"
-                f"Fix: delete {os.path.join(temp_dir, 'chunk*.md')} and re-run convert.py "
-                "(source chunks are regenerated from input.md; output_chunk*.md "
-                "translations are kept)."
-            )
+            print("Reusing them would build a book with missing or truncated text.")
+            if same_split:
+                print(
+                    f"Fix: delete {os.path.join(temp_dir, 'chunk*.md')} and re-run "
+                    "convert.py - the split is reproducible, so chunk numbers keep "
+                    "their meaning and output_chunk*.md translations stay valid."
+                )
+            elif glob.glob(os.path.join(temp_dir, 'output_chunk*.md')):
+                # Re-splitting here would renumber the text under every
+                # translation, silently pairing finished work with the wrong
+                # source chunk.
+                print(
+                    "These chunk files were built by a different --chunk-size or an "
+                    "older version of convert.py. Re-splitting moves every boundary, "
+                    "so the existing output_chunk*.md translations would be attached "
+                    "to the wrong source text."
+                )
+                print(
+                    "Fix: re-run with the --chunk-size that produced these chunks, or "
+                    "start a fresh temp directory - translation work cannot be carried "
+                    "over to a different split."
+                )
+            else:
+                print(
+                    f"Fix: delete {os.path.join(temp_dir, 'chunk*.md')} and re-run "
+                    "convert.py - no output_chunk*.md exist yet, so nothing is lost."
+                )
             return 0
 
-        print(f"Reusing {len(existing)} existing chunk file(s) - validated against input.md")
+        checked = os.path.exists(input_md)
+        print(
+            f"Reusing {len(existing)} existing chunk file(s) - "
+            + ("validated against input.md" if checked else "no input.md to compare")
+        )
         # Create/update manifest for existing files
         create_manifest(temp_dir, existing, input_md)
         return len(existing)

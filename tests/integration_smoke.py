@@ -58,8 +58,26 @@ def main():
         fail("convert.py exited non-zero")
 
     chunks = sorted(TEMP_DIR.glob("chunk*.md"))
-    if len(chunks) < 10:
-        fail(f"expected >= 10 chunks, got {len(chunks)}")
+    if len(chunks) < 2:
+        fail(f"expected the baseline to split into several chunks, got {len(chunks)}")
+
+    # The count depends on how the splitter packs sections, so assert the
+    # properties instead of a number: the split must be lossless and must
+    # respect --chunk-size (default 15000) as an upper bound.
+    input_md = TEMP_DIR / "input.md"
+    if not input_md.is_file():
+        fail("input.md missing after conversion")
+    chunk_bytes = sum(chunk.stat().st_size for chunk in chunks)
+    source_bytes = input_md.stat().st_size
+    if not 0.98 <= chunk_bytes / source_bytes <= 1.02:
+        fail(f"chunks hold {chunk_bytes} bytes of a {source_bytes}-byte input.md")
+    oversized = [
+        f"{chunk.name} ({len(chunk.read_text(encoding='utf-8'))} chars)"
+        for chunk in chunks
+        if len(chunk.read_text(encoding="utf-8")) > 15000 * 1.1
+    ]
+    if oversized:
+        fail(f"chunks exceed the 15000-char target: {', '.join(oversized)}")
 
     manifest_path = TEMP_DIR / "manifest.json"
     if not manifest_path.is_file():

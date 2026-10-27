@@ -544,6 +544,45 @@ class MergeBlocksToChunksTests(unittest.TestCase):
         chunks = convert.merge_blocks_to_chunks(blocks, target_size=6000)
         self.assertEqual(len(chunks), 1)
 
+    def test_short_sections_pack_into_one_chunk(self):
+        # Regression (C-03): every heading used to force a flush, so 10 short
+        # sections at --chunk-size 15000 became 10 chunks of ~513 chars - ten
+        # times the sub-agents, cost and time the caller asked for, each one
+        # too small to translate coherently.
+        content = "\n\n".join(
+            f"### Section {i}\n\n" + ("word " * 100).strip() for i in range(1, 11)
+        )
+        blocks = convert.parse_structural_blocks(content)
+        chunks = convert.merge_blocks_to_chunks(blocks, target_size=15000)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("### Section 10", chunks[0])
+
+    def test_heading_still_breaks_a_half_full_chunk(self):
+        section = "# {name}\n\n" + ("word " * 150).strip()
+        blocks = convert.parse_structural_blocks(
+            section.format(name="One") + "\n\n" + section.format(name="Two")
+        )
+        chunks = convert.merge_blocks_to_chunks(blocks, target_size=1200)
+
+        self.assertEqual(len(chunks), 2)
+        self.assertTrue(chunks[0].startswith("# One"))
+        self.assertTrue(chunks[1].startswith("# Two"))
+
+    def test_packing_keeps_chunk_size_an_upper_bound(self):
+        # Merging short sections must not let a chunk grow past target_size.
+        content = "\n\n".join(
+            f"### Section {i}\n\n" + ("word " * 40).strip() for i in range(1, 41)
+        )
+        blocks = convert.parse_structural_blocks(content)
+        chunks = convert.merge_blocks_to_chunks(blocks, target_size=1000)
+
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            # Block sizes are measured without the newlines that join them,
+            # hence the small allowance.
+            self.assertLessEqual(len(chunk), 1100)
+
     def test_no_content_loss_on_merge(self):
         content = "\n\n".join(
             f"# Chapter {i}\n\n" + ("word " * 30).strip() for i in range(1, 11)
@@ -643,8 +682,10 @@ class ChunkSetReuseTests(unittest.TestCase):
     """
 
     def _source(self):
+        # ~4000 chars per section: with the heading break at half of
+        # --chunk-size 6000, each section is its own chunk.
         return "\n\n".join(
-            f"# Section {i}\n\n" + ("word " * 400).strip() for i in range(1, 4)
+            f"# Section {i}\n\n" + ("word " * 800).strip() for i in range(1, 4)
         )
 
     def _split(self, tmp, chunk_size=6000):
@@ -725,6 +766,39 @@ class ChunkSetReuseTests(unittest.TestCase):
 
             self.assertEqual(count, 0)
             self.assertIn("--chunk-size 6000", out)
+            self.assertIn("nothing is lost", out)
+
+    def test_damaged_own_split_is_safe_to_regenerate(self):
+        # Same splitter, missing files: regenerating keeps chunk numbers, so
+        # the advice is plain "delete chunk*.md and re-run".
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp)
+            self.assertEqual(first, 3)
+            Path(tmp, "output_chunk0001.md").write_text("译文一。\n", encoding="utf-8")
+            os.remove(os.path.join(tmp, "chunk0002.md"))
+
+            count, out = self._rerun(tmp, md_file)
+
+            self.assertEqual(count, 0)
+            self.assertIn("chunk numbering has gaps", out)
+            self.assertIn("translations stay valid", out)
+
+    def test_foreign_split_with_translations_warns_about_misalignment(self):
+        # The dangerous case: a finished translation of a set built at another
+        # --chunk-size. Re-splitting renumbers the source under every output,
+        # so the advice must not be "delete chunk*.md and keep translating".
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp, chunk_size=1500)
+            self.assertGreater(first, 3)
+            for name in ("output_chunk0001.md", "output_chunk0002.md"):
+                Path(tmp, name).write_text("译文。\n", encoding="utf-8")
+
+            count, out = self._rerun(tmp, md_file, chunk_size=6000)
+
+            self.assertEqual(count, 0)
+            self.assertIn("attached to the wrong source text", out)
+            self.assertIn("start a fresh temp directory", out)
+            self.assertNotIn("stay valid", out)
 
     def test_missing_input_md_reuses_contiguous_chunks_with_warning(self):
         # Nothing to compare against, but a contiguous set is still usable.
