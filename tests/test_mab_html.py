@@ -114,5 +114,115 @@ class ApplyTemplateEscapingTests(unittest.TestCase):
         self.assertIn('content="Л. Н. Толстой"', html)
 
 
+class HtmlBuildStampTests(unittest.TestCase):
+    """convert_md_to_html produces book_doc.html AND book.html.
+
+    Regression: the skip decision only looked at book_doc.html's mtime, so a
+    build whose book.html was missing (or was built with another --title /
+    --author / --lang / template) reported success and never regenerated it.
+    """
+
+    MD = "# Chapter 1\n\nSome chapter text.\n"
+    OTHER_LANG_CFG = {
+        "lang_attr": "en",
+        "font_family": "Georgia, serif",
+        "toc_label": "Contents",
+    }
+
+    def _write_md(self, tmp, text=None):
+        Path(tmp, "output.md").write_text(text or self.MD, encoding="utf-8")
+
+    def _run(self, tmp, title="Old Title", author="Author", cfg=None):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ok = _mab_html.convert_md_to_html(
+                str(tmp), title, cfg or LANG_CFG, author
+            )
+        return ok, buf.getvalue()
+
+    def test_generates_both_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_md(tmp)
+            ok, _ = self._run(tmp)
+
+            self.assertTrue(ok)
+            self.assertTrue(Path(tmp, "book_doc.html").is_file())
+            self.assertTrue(Path(tmp, "book.html").is_file())
+
+    def test_second_run_skips_unchanged_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_md(tmp)
+            self.assertTrue(self._run(tmp)[0])
+            ok, out = self._run(tmp)
+
+            self.assertTrue(ok)
+            self.assertIn("Skipping HTML generation", out)
+
+    def test_missing_book_html_is_regenerated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_md(tmp)
+            self.assertTrue(self._run(tmp)[0])
+            Path(tmp, "book.html").unlink()
+
+            ok, out = self._run(tmp)
+
+            self.assertTrue(ok)
+            self.assertIn("missing book.html", out)
+            self.assertTrue(Path(tmp, "book.html").is_file())
+
+    def test_title_change_regenerates_book_html(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_md(tmp)
+            self.assertTrue(self._run(tmp, title="Old Title")[0])
+
+            ok, out = self._run(tmp, title="New Title")
+            doc_html = Path(tmp, "book_doc.html").read_text(encoding="utf-8")
+            web_html = Path(tmp, "book.html").read_text(encoding="utf-8")
+
+            self.assertTrue(ok)
+            self.assertIn("title", out)
+            self.assertIn("New Title", doc_html)
+            self.assertIn("New Title", web_html)
+            self.assertNotIn("Old Title", web_html)
+
+    def test_author_change_regenerates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_md(tmp)
+            self.assertTrue(self._run(tmp, author="First Author")[0])
+
+            ok, out = self._run(tmp, author="Second Author")
+            doc_html = Path(tmp, "book_doc.html").read_text(encoding="utf-8")
+
+            self.assertTrue(ok)
+            self.assertIn("author", out)
+            self.assertIn("Second Author", doc_html)
+            self.assertNotIn("First Author", doc_html)
+
+    def test_language_change_regenerates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_md(tmp)
+            self.assertTrue(self._run(tmp)[0])
+
+            ok, out = self._run(tmp, cfg=self.OTHER_LANG_CFG)
+            web_html = Path(tmp, "book.html").read_text(encoding="utf-8")
+
+            self.assertTrue(ok)
+            self.assertIn("lang_attr", out)
+            self.assertIn('lang="en"', web_html)
+
+    def test_output_md_change_regenerates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_md(tmp)
+            self.assertTrue(self._run(tmp)[0])
+
+            self._write_md(tmp, "# Chapter 2\n\nCompletely different body text.\n")
+            ok, out = self._run(tmp)
+            web_html = Path(tmp, "book.html").read_text(encoding="utf-8")
+
+            self.assertTrue(ok)
+            self.assertIn("output_md_sha256", out)
+            self.assertIn("Completely different body text", web_html)
+
+
 if __name__ == "__main__":
     unittest.main()

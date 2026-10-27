@@ -168,5 +168,101 @@ class ReadOutputTextTests(unittest.TestCase):
             self.assertIsNone(manifest.read_output_text(str(path)))
 
 
+class ManifestRobustnessTests(unittest.TestCase):
+    """A manifest that exists but cannot be used must block the merge.
+
+    Regression: a truncated manifest.json (crash during the in-place write)
+    raised JSONDecodeError out of validate_for_merge, and a manifest without a
+    "chunks" key raised KeyError — both inside the integrity gate the rest of
+    the pipeline relies on.
+    """
+
+    def _write(self, path, content):
+        Path(path).write_text(content, encoding="utf-8")
+
+    def _validate(self, temp_dir):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ok, ordered, warnings = manifest.validate_for_merge(str(temp_dir))
+        return ok, ordered, warnings, buf.getvalue()
+
+    def test_corrupt_manifest_blocks_merge_without_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = Path(tmp)
+            self._write(temp_dir / "chunk0001.md", "Source text.\n")
+            self._write(temp_dir / "output_chunk0001.md", "译文。\n")
+            self._write(temp_dir / "manifest.json", '{"chunk_count": 1, "chunks": [')
+
+            ok, ordered, _, out = self._validate(temp_dir)
+
+        self.assertFalse(ok)
+        self.assertIsNone(ordered)
+        self.assertIn("manifest.json is unreadable", out)
+        self.assertIn("delete", out)
+
+    def test_manifest_without_chunks_key_blocks_merge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = Path(tmp)
+            self._write(temp_dir / "output_chunk0001.md", "译文。\n")
+            self._write(temp_dir / "manifest.json", '{"chunk_count": 0, "source_hash": "abc"}')
+
+            ok, ordered, _, out = self._validate(temp_dir)
+
+        self.assertFalse(ok)
+        self.assertIsNone(ordered)
+        self.assertIn("no usable 'chunks' array", out)
+
+    def test_malformed_chunk_entry_blocks_merge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = Path(tmp)
+            self._write(temp_dir / "output_chunk0001.md", "译文。\n")
+            self._write(
+                temp_dir / "manifest.json",
+                '{"chunks": [{"id": "chunk0001", "order": 1}]}',
+            )
+
+            ok, ordered, _, out = self._validate(temp_dir)
+
+        self.assertFalse(ok)
+        self.assertIsNone(ordered)
+        self.assertIn("missing source_file, output_file", out)
+
+    def test_load_manifest_raises_manifest_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "manifest.json").write_text("{not json", encoding="utf-8")
+            with self.assertRaises(manifest.ManifestError):
+                manifest.load_manifest(tmp)
+
+    def test_missing_manifest_still_uses_legacy_merge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "output_chunk0001.md").write_text("译文。\n", encoding="utf-8")
+            ok, ordered, warnings, _ = self._validate(Path(tmp))
+
+        self.assertTrue(ok)
+        self.assertIsNone(ordered)
+        self.assertTrue(any("No manifest.json" in w for w in warnings))
+
+    def test_create_manifest_leaves_no_temp_files_behind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = Path(tmp)
+            self._write(temp_dir / "input.md", "Source text.\n")
+            self._write(temp_dir / "chunk0001.md", "Source text.\n")
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                first = manifest.create_manifest(
+                    str(temp_dir), ["chunk0001.md"], str(temp_dir / "input.md")
+                )
+                second = manifest.create_manifest(
+                    str(temp_dir), ["chunk0001.md"], str(temp_dir / "input.md")
+                )
+
+            leftovers = [p.name for p in temp_dir.iterdir() if p.name.startswith(".manifest-")]
+
+        self.assertEqual(first["chunk_count"], 1)
+        self.assertEqual(second["chunk_count"], 1)
+        self.assertEqual(leftovers, [])
+
+
 if __name__ == "__main__":
     unittest.main()

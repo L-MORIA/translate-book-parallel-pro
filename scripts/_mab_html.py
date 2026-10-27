@@ -9,11 +9,14 @@ convert_md_to_html orchestrator. Extracted verbatim from merge_and_build.py
 
 import os
 import re
+import json
 import subprocess
+import tempfile
 import html as _html_lib
 
 from _mab_common import SCRIPT_DIR
 from _mab_images import _check_generated_html_sanity
+from manifest import file_hash
 
 # Try to import markdown
 try:
@@ -269,8 +272,95 @@ def process_html_separators(html_file):
         print(f"Error processing separators: {e}")
 
 
+HTML_BUILD_STAMP_NAME = '.html_build_stamp.json'
+_TEMPLATE_FILES = ('template.html', 'template_ebook.html')
+
+
+def _build_stamp(md_file, title, lang_cfg, author):
+    """Collect every input that changes the generated HTML.
+
+    output.md is identified by content hash (a restored/copied file must not
+    look "up to date"); templates are keyed by mtime because editing them has
+    to force a rebuild.
+    """
+    templates = {}
+    for name in _TEMPLATE_FILES:
+        path = os.path.join(SCRIPT_DIR, name)
+        templates[name] = os.path.getmtime(path) if os.path.exists(path) else 0
+    return {
+        'output_md_sha256': file_hash(md_file),
+        'title': title or '',
+        'author': author or '',
+        'lang_attr': lang_cfg.get('lang_attr', ''),
+        'templates': templates,
+    }
+
+
+def _read_build_stamp(temp_dir):
+    path = os.path.join(temp_dir, HTML_BUILD_STAMP_NAME)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            stamp = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return stamp if isinstance(stamp, dict) else None
+
+
+def _write_build_stamp(temp_dir, stamp):
+    path = os.path.join(temp_dir, HTML_BUILD_STAMP_NAME)
+    fd, tmp_path = tempfile.mkstemp(dir=temp_dir, prefix='.html-stamp-', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(stamp, f, indent=2, ensure_ascii=False, sort_keys=True)
+        os.replace(tmp_path, path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
+def _outputs_up_to_date(temp_dir, book_doc_file, book_file, stamp):
+    """True only when BOTH generated files exist, match the current inputs and
+    pass the image sanity check."""
+    if not (os.path.exists(book_doc_file) and os.path.exists(book_file)):
+        return False
+    if _read_build_stamp(temp_dir) != stamp:
+        return False
+    return (
+        _check_generated_html_sanity(book_doc_file)
+        and _check_generated_html_sanity(book_file)
+    )
+
+
+def _report_rebuild_reason(temp_dir, book_doc_file, book_file, stamp):
+    """Explain why the outputs are about to be regenerated (log only)."""
+    missing = [
+        os.path.basename(path)
+        for path in (book_doc_file, book_file)
+        if not os.path.exists(path)
+    ]
+    if missing:
+        print(f"Re-generating HTML - missing {', '.join(missing)}")
+        return
+    previous = _read_build_stamp(temp_dir)
+    if previous is None:
+        print("Re-generating HTML - no build stamp (outputs predate input tracking)")
+        return
+    changed = [key for key in stamp if previous.get(key) != stamp[key]]
+    print(f"Re-generating HTML - build inputs changed: {', '.join(changed) or 'unknown'}")
+
+
 def convert_md_to_html(temp_dir, title, lang_cfg, author=None):
-    """Convert output.md to HTML with templates"""
+    """Convert output.md to HTML with templates.
+
+    Both book_doc.html (ebook) and book.html (web) are produced here, so the
+    skip decision is driven by a stamp of every generator input (output.md
+    content, title, author, language, template mtimes) rather than by the
+    mtime of one of the two outputs.
+    """
     print("=== Converting markdown to HTML ===")
 
     md_file = os.path.join(temp_dir, 'output.md')
@@ -279,17 +369,13 @@ def convert_md_to_html(temp_dir, title, lang_cfg, author=None):
         return False
 
     book_doc_file = os.path.join(temp_dir, 'book_doc.html')
+    book_file = os.path.join(temp_dir, 'book.html')
 
-    # Skip HTML generation if book_doc.html exists and is newer than output.md
-    if os.path.exists(book_doc_file):
-        if os.path.getmtime(book_doc_file) > os.path.getmtime(md_file):
-            if _check_generated_html_sanity(book_doc_file):
-                print("Skipping HTML generation - book_doc.html is up to date")
-                return True
-            print("Stale book_doc.html failed image sanity — regenerating")
-            os.remove(book_doc_file)
-        else:
-            print("Re-generating HTML - output.md is newer")
+    stamp = _build_stamp(md_file, title, lang_cfg, author)
+    if _outputs_up_to_date(temp_dir, book_doc_file, book_file, stamp):
+        print("Skipping HTML generation - book_doc.html and book.html are up to date")
+        return True
+    _report_rebuild_reason(temp_dir, book_doc_file, book_file, stamp)
 
     temp_html_file = os.path.join(temp_dir, 'output.html')
 
@@ -324,18 +410,25 @@ def convert_md_to_html(temp_dir, title, lang_cfg, author=None):
 
     # Generate book_doc.html with ebook template
     template_ebook = os.path.join(SCRIPT_DIR, 'template_ebook.html')
-    book_doc_file = os.path.join(temp_dir, 'book_doc.html')
-    apply_template_to_html(body_content, template_ebook, book_doc_file, title, lang_cfg, author)
+    if not apply_template_to_html(
+        body_content, template_ebook, book_doc_file, title, lang_cfg, author
+    ):
+        print("Error: failed to write book_doc.html")
+        return False
 
     # Generate book.html with web template
     template_web = os.path.join(SCRIPT_DIR, 'template.html')
-    book_file = os.path.join(temp_dir, 'book.html')
-    apply_template_to_html(body_content, template_web, book_file, title, lang_cfg, author)
+    if not apply_template_to_html(
+        body_content, template_web, book_file, title, lang_cfg, author
+    ):
+        print("Error: failed to write book.html")
+        return False
 
     if not _check_generated_html_sanity(book_doc_file):
         return False
     if not _check_generated_html_sanity(book_file):
         return False
 
+    _write_build_stamp(temp_dir, stamp)
     print("Generated: output.html, book_doc.html, book.html")
     return True

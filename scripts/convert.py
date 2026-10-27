@@ -690,6 +690,16 @@ def _force_split_block(text, target_size):
     return chunks
 
 
+def split_markdown_text(content, target_size=6000):
+    """Split markdown source text into a list of chunk texts (pure, no disk IO).
+
+    Shared by split_markdown_structured() and by the reuse check in
+    _do_split_and_manifest(), so both always agree on what the split is.
+    """
+    blocks = parse_structural_blocks(content)
+    return merge_blocks_to_chunks(blocks, target_size)
+
+
 def split_markdown_structured(md_file, temp_dir, target_size=6000):
     """Split markdown into structural chunks.
 
@@ -699,8 +709,7 @@ def split_markdown_structured(md_file, temp_dir, target_size=6000):
         with open(md_file, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        blocks = parse_structural_blocks(content)
-        chunk_texts = merge_blocks_to_chunks(blocks, target_size)
+        chunk_texts = split_markdown_text(content, target_size)
 
         chunk_files = []
         for i, chunk_text in enumerate(chunk_texts, 1):
@@ -722,11 +731,116 @@ def split_markdown_structured(md_file, temp_dir, target_size=6000):
         return []
 
 
+_CHUNK_NAME_RE = re.compile(r'^chunk(\d+)\.md$')
+
+# Splitting is lossless apart from collapsed trailing whitespace (measured on
+# real books: 0.9998-1.0000 of input.md), so anything outside this band means
+# the chunk set on disk no longer represents the source.
+CHUNK_SIZE_TOLERANCE = 0.10
+
+
+def _chunk_sort_key(name):
+    """Sort chunk names by their number, not lexicographically.
+
+    Lexicographic order puts chunk10000.md before chunk1001.md, which would
+    silently reorder the manifest past 9999 chunks.
+    """
+    match = _CHUNK_NAME_RE.match(name)
+    if match is None:
+        return (1, name)
+    return (0, int(match.group(1)))
+
+
 def _find_existing_chunk_files(temp_dir):
     """Find existing chunk source filenames (excluding output_ prefixed), sorted."""
     chunk_files = glob.glob(os.path.join(temp_dir, 'chunk*.md'))
     chunk_files = [os.path.basename(f) for f in chunk_files if not os.path.basename(f).startswith('output_')]
-    return sorted(chunk_files)
+    return sorted(chunk_files, key=_chunk_sort_key)
+
+
+def _chunk_set_problems(temp_dir, existing, input_md, chunk_size):
+    """Return the reasons `existing` is not a trustworthy reuse of a past split.
+
+    An empty list means the whole set is present, contiguous and byte-identical
+    to what a fresh split of input.md at `chunk_size` would produce. Any other
+    result means rebuilding from these chunks would silently drop book text.
+    """
+    problems = []
+
+    numbers = []
+    for name in existing:
+        match = _CHUNK_NAME_RE.match(name)
+        if match is None:
+            problems.append(f"{name} is not a chunkNNNN.md file")
+        else:
+            numbers.append(int(match.group(1)))
+    if problems:
+        return problems
+
+    numbers.sort()
+    if numbers != list(range(1, len(numbers) + 1)):
+        missing = sorted(set(range(1, numbers[-1] + 1)) - set(numbers))
+        shown = ", ".join(f"chunk{number:04d}.md" for number in missing[:5])
+        if len(missing) > 5:
+            shown += f" ... ({len(missing)} missing)"
+        problems.append(f"chunk numbering has gaps - missing {shown}")
+
+    empty = [
+        name for name in existing
+        if os.path.getsize(os.path.join(temp_dir, name)) == 0
+    ]
+    if empty:
+        problems.append(f"empty chunk file(s): {', '.join(empty[:5])}")
+
+    if not os.path.exists(input_md):
+        # Nothing to compare against; contiguity is all we can check.
+        print(f"Warning: {input_md} not found - reusing chunks without a content check")
+        return problems
+
+    source_bytes = os.path.getsize(input_md)
+    chunk_bytes = sum(os.path.getsize(os.path.join(temp_dir, name)) for name in existing)
+    if source_bytes > 0:
+        ratio = chunk_bytes / source_bytes
+        if not (1 - CHUNK_SIZE_TOLERANCE <= ratio <= 1 + CHUNK_SIZE_TOLERANCE):
+            problems.append(
+                f"chunks hold {chunk_bytes:,} bytes but input.md has {source_bytes:,} "
+                f"({ratio:.0%}) - the split looks incomplete"
+            )
+
+    # Exact content check: re-split input.md in memory and compare chunk by
+    # chunk. One extra parse, but it catches the case a total-size check
+    # misses - a single truncated chunk on a long book.
+    try:
+        with open(input_md, 'r', encoding='utf-8') as f:
+            content = f.read()
+        expected_texts = split_markdown_text(content, chunk_size)
+    except (OSError, UnicodeDecodeError) as e:
+        problems.append(f"cannot re-read {input_md} to verify the chunk set ({e})")
+        return problems
+
+    if len(expected_texts) != len(existing):
+        problems.append(
+            f"{len(existing)} chunk file(s) on disk, but a fresh split at "
+            f"--chunk-size {chunk_size} produces {len(expected_texts)}"
+        )
+        return problems
+
+    for name, expected_text in zip(existing, expected_texts):
+        try:
+            with open(os.path.join(temp_dir, name), 'r', encoding='utf-8') as f:
+                actual_text = f.read()
+        except (OSError, UnicodeDecodeError) as e:
+            problems.append(f"cannot read {name} ({e})")
+            continue
+        if actual_text != expected_text:
+            problems.append(
+                f"{name} differs from a fresh split of input.md "
+                f"({len(actual_text):,} chars vs {len(expected_text):,} expected) - "
+                f"truncated or edited"
+            )
+            break
+
+    return problems
 
 
 def create_config_file(temp_dir, input_file, input_lang, output_lang, metadata=None):
@@ -762,10 +876,33 @@ conversion_method=calibre_htmlz
 
 
 def _do_split_and_manifest(temp_dir, input_md, chunk_size):
-    """Split markdown and create manifest. Returns chunk count or 0 on failure."""
+    """Split markdown and create manifest. Returns chunk count or 0 on failure.
+
+    Reusing an existing chunk set is only safe when it is a complete, unmodified
+    split of input.md. A partially written set (interrupted split, disk full,
+    manual deletion) would otherwise be "validated" against a manifest rebuilt
+    from the same incomplete files - the book would ship with text missing and
+    exit code 0.
+    """
     existing = _find_existing_chunk_files(temp_dir)
     if existing:
-        print(f"Skipping markdown splitting - found {len(existing)} existing chunk files")
+        problems = _chunk_set_problems(temp_dir, existing, input_md, chunk_size)
+        if problems:
+            print(
+                f"Error: refusing to reuse the {len(existing)} existing chunk file(s) "
+                f"in {temp_dir} - the set does not match input.md:"
+            )
+            for problem in problems:
+                print(f"  - {problem}")
+            print(
+                "Reusing them would build a book with missing or truncated text.\n"
+                f"Fix: delete {os.path.join(temp_dir, 'chunk*.md')} and re-run convert.py "
+                "(source chunks are regenerated from input.md; output_chunk*.md "
+                "translations are kept)."
+            )
+            return 0
+
+        print(f"Reusing {len(existing)} existing chunk file(s) - validated against input.md")
         # Create/update manifest for existing files
         create_manifest(temp_dir, existing, input_md)
         return len(existing)

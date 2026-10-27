@@ -6,6 +6,20 @@ manifest.py - Manifest management for chunk tracking and merge validation.
 import os
 import json
 import hashlib
+import tempfile
+
+
+class ManifestError(ValueError):
+    """Raised when manifest.json exists but cannot be used (corrupt or wrong shape).
+
+    Distinct from a *missing* manifest (which callers may treat as "legacy
+    mode"): a manifest that exists but is unreadable means the integrity gate
+    cannot do its job, so every caller must stop instead of guessing.
+    """
+
+
+# Keys every manifest chunk entry must carry for the merge gate to work.
+REQUIRED_CHUNK_KEYS = ("id", "order", "source_file", "output_file")
 
 
 def file_hash(filepath):
@@ -62,20 +76,77 @@ def create_manifest(temp_dir, chunk_files, source_md_path):
     }
 
     manifest_path = os.path.join(temp_dir, "manifest.json")
-    with open(manifest_path, 'w', encoding='utf-8') as f:
-        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+    # Atomic write: a crash mid-dump must not leave a truncated manifest.json —
+    # that file is the integrity gate for the whole merge step.
+    dirname = os.path.dirname(os.path.abspath(manifest_path)) or '.'
+    fd, tmp_path = tempfile.mkstemp(dir=dirname, prefix='.manifest-', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, manifest_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
 
     print(f"Created manifest.json ({len(chunks)} chunks)")
     return manifest
 
 
 def load_manifest(temp_dir):
-    """Load manifest.json from temp_dir. Returns None if not found."""
+    """Load manifest.json from temp_dir.
+
+    Returns None only when the file is absent (legacy/no-manifest mode).
+    Raises ManifestError when it exists but cannot be parsed — callers must
+    not fall back to a glob merge on a corrupt manifest, that would silently
+    drop the integrity gate.
+    """
     manifest_path = os.path.join(temp_dir, "manifest.json")
     if not os.path.exists(manifest_path):
         return None
-    with open(manifest_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(manifest_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise ManifestError(
+            f"manifest.json is unreadable ({e.__class__.__name__}: {e}) — "
+            f"delete {manifest_path} and re-run convert.py to rebuild it"
+        ) from e
+    if not isinstance(data, dict):
+        raise ManifestError(
+            f"manifest.json must be a JSON object, got {type(data).__name__} — "
+            f"delete {manifest_path} and re-run convert.py to rebuild it"
+        )
+    return data
+
+
+def _validated_chunks(manifest):
+    """Return (chunks, problem). `problem` is a human-readable string when the
+    manifest exists but its chunk list cannot be trusted."""
+    chunks = manifest.get("chunks")
+    if not isinstance(chunks, list):
+        return None, (
+            "manifest.json has no usable 'chunks' array "
+            f"(got {type(chunks).__name__}) — "
+            "delete manifest.json and re-run convert.py to rebuild it"
+        )
+    for index, chunk in enumerate(chunks):
+        if not isinstance(chunk, dict):
+            return None, (
+                f"manifest.json chunk entry #{index} is not an object — "
+                "delete manifest.json and re-run convert.py to rebuild it"
+            )
+        missing = [key for key in REQUIRED_CHUNK_KEYS if key not in chunk]
+        if missing:
+            return None, (
+                f"manifest.json chunk entry #{index} is missing {', '.join(missing)} — "
+                "delete manifest.json and re-run convert.py to rebuild it"
+            )
+    return chunks, None
 
 
 def validate_for_merge(temp_dir):
@@ -86,16 +157,28 @@ def validate_for_merge(temp_dir):
         ordered_output_files: list of output file paths in order
         warnings: list of warning strings
     """
-    manifest = load_manifest(temp_dir)
+    try:
+        manifest = load_manifest(temp_dir)
+    except ManifestError as e:
+        # A manifest that exists but cannot be parsed must block the merge:
+        # falling back to a glob merge here would silently disable the gate.
+        print(f"ERROR: {e}")
+        return False, None, []
+
     if manifest is None:
         # No manifest — fall back to legacy glob-based merge
         return True, None, ["No manifest.json found, using legacy merge"]
+
+    chunks, problem = _validated_chunks(manifest)
+    if problem:
+        print(f"ERROR: {problem}")
+        return False, None, []
 
     errors = []
     warnings = []
     ordered_output_files = []
 
-    for chunk in sorted(manifest["chunks"], key=lambda c: c["order"]):
+    for chunk in sorted(chunks, key=lambda c: c.get("order", 0)):
         output_path = os.path.join(temp_dir, chunk["output_file"])
         source_path = os.path.join(temp_dir, chunk["source_file"])
 

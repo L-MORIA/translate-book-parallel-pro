@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -629,6 +631,123 @@ class SplitMarkdownStructuredTests(unittest.TestCase):
 
             self.assertEqual(chunk_files, ["chunk0001.md"])
             self.assertEqual((Path(tmp) / "chunk0001.md").read_text(encoding="utf-8"), "")
+
+
+class ChunkSetReuseTests(unittest.TestCase):
+    """Re-running convert.py must never "validate" an incomplete chunk set.
+
+    The regression these tests pin down: delete 2 of 3 chunk files plus the
+    manifest, re-run convert, and the old code rebuilt the manifest from the
+    single surviving chunk and reported success — the book silently shipped
+    with two thirds of its text missing.
+    """
+
+    def _source(self):
+        return "\n\n".join(
+            f"# Section {i}\n\n" + ("word " * 400).strip() for i in range(1, 4)
+        )
+
+    def _split(self, tmp, chunk_size=6000):
+        md_file = Path(tmp) / "input.md"
+        md_file.write_text(self._source(), encoding="utf-8")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            count = convert._do_split_and_manifest(tmp, str(md_file), chunk_size)
+        return md_file, count, buf.getvalue()
+
+    def _rerun(self, tmp, md_file, chunk_size=6000):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            count = convert._do_split_and_manifest(tmp, str(md_file), chunk_size)
+        return count, buf.getvalue()
+
+    def test_complete_chunk_set_is_reused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp)
+            self.assertEqual(first, 3)
+            count, out = self._rerun(tmp, md_file)
+
+            self.assertEqual(count, 3)
+            self.assertIn("validated against input.md", out)
+            self.assertEqual(len(convert._find_existing_chunk_files(tmp)), 3)
+
+    def test_refuses_when_chunk_files_were_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp)
+            self.assertEqual(first, 3)
+            for name in ("chunk0002.md", "chunk0003.md"):
+                os.remove(os.path.join(tmp, name))
+            os.remove(os.path.join(tmp, "manifest.json"))
+
+            count, out = self._rerun(tmp, md_file)
+
+            self.assertEqual(count, 0)
+            self.assertIn("refusing to reuse", out)
+            self.assertIn("the split looks incomplete", out)
+            self.assertIn("produces 3", out)
+            # The manifest must not be rewritten from the partial set.
+            self.assertFalse(os.path.exists(os.path.join(tmp, "manifest.json")))
+
+    def test_refuses_gap_in_chunk_numbering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp)
+            self.assertEqual(first, 3)
+            os.remove(os.path.join(tmp, "chunk0001.md"))
+
+            count, out = self._rerun(tmp, md_file)
+
+            self.assertEqual(count, 0)
+            self.assertIn("chunk numbering has gaps", out)
+            self.assertIn("chunk0001.md", out)
+
+    def test_refuses_truncated_chunk(self):
+        # A single truncated chunk stays inside any sane total-size tolerance on
+        # a long book, so the content comparison has to catch it.
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp)
+            self.assertEqual(first, 3)
+            last = os.path.join(tmp, "chunk0003.md")
+            text = Path(last).read_text(encoding="utf-8")
+            Path(last).write_text(text[: len(text) // 2], encoding="utf-8")
+
+            count, out = self._rerun(tmp, md_file)
+
+            self.assertEqual(count, 0)
+            self.assertIn("chunk0003.md", out)
+            self.assertIn("differs from a fresh split", out)
+
+    def test_refuses_chunk_set_built_with_another_chunk_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp, chunk_size=1500)
+            self.assertGreater(first, 3)
+
+            count, out = self._rerun(tmp, md_file, chunk_size=6000)
+
+            self.assertEqual(count, 0)
+            self.assertIn("--chunk-size 6000", out)
+
+    def test_missing_input_md_reuses_contiguous_chunks_with_warning(self):
+        # Nothing to compare against, but a contiguous set is still usable.
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp)
+            self.assertEqual(first, 3)
+            os.remove(md_file)
+
+            count, out = self._rerun(tmp, md_file)
+
+            self.assertEqual(count, 3)
+            self.assertIn("without a content check", out)
+
+    def test_refuses_foreign_chunk_named_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            md_file, first, _ = self._split(tmp)
+            self.assertEqual(first, 3)
+            Path(tmp, "chunknotes.md").write_text("not a chunk", encoding="utf-8")
+
+            count, out = self._rerun(tmp, md_file)
+
+            self.assertEqual(count, 0)
+            self.assertIn("chunknotes.md is not a chunkNNNN.md file", out)
 
 
 if __name__ == "__main__":

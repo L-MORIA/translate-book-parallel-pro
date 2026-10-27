@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.2 — Correctness: chunk-set validation, HTML rebuild stamp, manifest robustness (2026-10-27)
+
+- **Fixed** `convert.py` (silent text loss): re-running convert.py on a partial chunk set rebuilt `manifest.json` from the surviving files and exited 0 — the book shipped with chapters missing. Reuse is now gated on the chunk set being a complete, unmodified split of `input.md`: contiguous `chunkNNNN.md` numbering, no empty files, total size within ±10 % of `input.md`, and byte-identical comparison against a fresh in-memory split at the current `--chunk-size`. Any mismatch aborts with exit 1 and a fix hint instead of rebuilding (`output_chunk*.md` translations are preserved)
+- **Fixed** `_mab_html.py` (stale/missing HTML): HTML regeneration was decided by the mtime of `book_doc.html` alone, so a missing `book.html`, a changed `--title`/`--author`/`--olang`, or an edited template silently kept the old output. The skip decision now uses `.html_build_stamp.json` (sha256 of `output.md` + title/author/lang + template mtimes) and requires both `book_doc.html` and `book.html` to exist and pass the image sanity check; failures to write either file now return False instead of being ignored
+- **Fixed** `manifest.py` (integrity gate): a truncated `manifest.json` raised `JSONDecodeError` and a manifest without a `chunks` key raised `KeyError` inside `validate_for_merge`. Both now raise `ManifestError`, are reported as `ERROR: …` with a rebuild hint, and **block** the merge — a corrupt manifest no longer falls back to the legacy glob merge that would skip the hash gate. A *missing* manifest still uses legacy mode. `create_manifest` writes atomically (`mkstemp` + `os.replace`)
+- **Fixed** `convert.py`: chunk filenames are sorted numerically, not lexicographically (`chunk10000.md` no longer sorts before `chunk1001.md`, which would corrupt manifest order past 9999 chunks)
+- **Internal**: `split_markdown_text()` extracted so the splitter and the reuse check share one implementation
+- **Tests**: 271 → 291. New: `ChunkSetReuseTests` (deleted / truncated / gap / wrong `--chunk-size` / foreign `chunk*.md` / missing `input.md`), `ManifestRobustnessTests` (corrupt JSON, missing `chunks`, malformed entry, legacy fallback, no temp leftovers), `HtmlBuildStampTests` (both outputs, missing `book.html`, title/author/lang/`output.md` changes, unchanged inputs still skip)
+
 ## v1.2.1 — Full audit: security, correctness, tests, repo hygiene (2026-10-25)
 
 - **Fixed** `convert.py`: the `[**bold**]` cleaner no longer corrupts real markdown links (`[**Chapter 1**](url)` stayed intact now)
