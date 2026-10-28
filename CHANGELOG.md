@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.2.6 — `merge_meta.py`: readable error instead of a traceback when the glossary is missing (2026-10-28)
+
+- **Fixed** `merge_meta.py` (C-07): `prepare-merge` and `apply-merge` call `load_glossary()`, which raises `FileNotFoundError` (and `ValueError` for unreadable JSON or a schema mismatch); `main()` did not catch either, so a missing `glossary.json` produced a raw Python traceback. SKILL.md §3.5 builds the glossary before translation, but the skill also allows working without one and the file can be deleted by hand — that is a user-fixable input problem, not a crash
+- **Behaviour**: the error is printed as `error: Glossary not found: <path>` plus a `hint:` naming the next step (build it per SKILL.md §3.5 or use a temp dir that has one), exit code **2**; a malformed glossary prints `error: ...` and also exits 2. `status` keeps working without a glossary as before
+- **Tests**: 318 → 322, new `CliGlossaryErrorTests` drives `main()` through `sys.argv`: missing glossary on `prepare-merge` / `apply-merge`, corrupt JSON, and `status` on an empty dir (must still succeed). Each asserts exit code, stderr text and the absence of `Traceback`
+
 ## v1.2.5 — SKILL.md: self-contradictory escaping example, Chinese leakage in the Russian prompt (2026-10-28)
 
 - **Fixed** `SKILL.md` (C-06): the "correct" example for escaping quotes inside an `alt` attribute was byte-for-byte the example declared wrong on the line above, so the only place documenting attribute escaping gave the translator two opposite instructions. The correct line now shows `&quot;` and typographic quotes only; the straight inner quote appears exclusively in the wrong example

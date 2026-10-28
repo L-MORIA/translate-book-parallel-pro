@@ -1043,12 +1043,30 @@ def main():
 
     args = parser.parse_args()
 
-    if args.cmd == 'prepare-merge':
-        cmd_prepare_merge(args.temp_dir)
-    elif args.cmd == 'apply-merge':
-        cmd_apply_merge(args.temp_dir)
-    elif args.cmd == 'status':
-        cmd_status(args.temp_dir)
+    handlers = {
+        'prepare-merge': cmd_prepare_merge,
+        'apply-merge': cmd_apply_merge,
+        'status': cmd_status,
+    }
+    try:
+        handlers[args.cmd](args.temp_dir)
+    except FileNotFoundError as e:
+        # Glossary is normally built in SKILL.md §3.5, but the skill also
+        # allows working without one and a user may delete it by hand. Report
+        # that as a readable error with a next step, not a stack trace.
+        sys.stderr.write(f"error: {e}\n")
+        if 'glossary' in str(e).lower():
+            sys.stderr.write(
+                "hint: build the glossary first (SKILL.md §3.5 - write "
+                "glossary.json into the temp dir), or use a temp dir that "
+                "already has one\n"
+            )
+        sys.exit(2)
+    except ValueError as e:
+        # load_glossary raises ValueError for unreadable JSON or a schema
+        # mismatch; both are user-fixable input problems, not crashes.
+        sys.stderr.write(f"error: {e}\n")
+        sys.exit(2)
 
 
 if __name__ == '__main__':

@@ -105,6 +105,22 @@ def run_status(temp_dir):
     return json.loads(out.getvalue())
 
 
+def run_main(argv, stdin_text=''):
+    """Run merge_meta.main() as the CLI does. Returns (exit_code, stdout, stderr)."""
+    out = io.StringIO()
+    err = io.StringIO()
+    code = 0
+    with mock.patch.object(sys, 'argv', ['merge_meta.py'] + list(argv)), \
+         mock.patch.object(sys, 'stdin', io.StringIO(stdin_text)), \
+         mock.patch.object(sys, 'stdout', out), \
+         mock.patch.object(sys, 'stderr', err):
+        try:
+            merge_meta.main()
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) else 1
+    return code, out.getvalue(), err.getvalue()
+
+
 class PrepareMergeBasicTests(unittest.TestCase):
     def test_no_metas_returns_empty(self):
         with temp_workspace(glossary=make_glossary()) as tmp:
@@ -1899,6 +1915,47 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(status['malformed_meta_files'], 1)
         self.assertIn('chunk0001', status['malformed_meta_chunk_ids'])
         self.assertEqual(status['meta_files_consumed'], 0)
+
+
+class CliGlossaryErrorTests(unittest.TestCase):
+    """The glossary is optional in SKILL.md, so a missing or broken one must
+    produce a readable error and exit code 2 - not a Python traceback."""
+
+    def test_prepare_merge_without_glossary_exits_2_with_hint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = run_main(['prepare-merge', tmp])
+        self.assertEqual(code, 2)
+        self.assertEqual(out, '')
+        self.assertIn('Glossary not found', err)
+        self.assertIn('glossary.json', err)
+        self.assertIn('hint:', err)
+        self.assertNotIn('Traceback', err)
+
+    def test_apply_merge_without_glossary_exits_2(self):
+        payload = json.dumps({'auto_apply': [], 'decisions': [], 'consumed_chunk_ids': []})
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = run_main(['apply-merge', tmp], stdin_text=payload)
+        self.assertEqual(code, 2)
+        self.assertEqual(out, '')
+        self.assertIn('Glossary not found', err)
+        self.assertNotIn('Traceback', err)
+
+    def test_malformed_glossary_exits_2_without_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, 'glossary.json').write_text('{not valid json', encoding='utf-8')
+            code, out, err = run_main(['prepare-merge', tmp])
+        self.assertEqual(code, 2)
+        self.assertEqual(out, '')
+        self.assertIn('not valid JSON', err)
+        self.assertNotIn('Traceback', err)
+
+    def test_status_without_glossary_still_succeeds(self):
+        # status is read-only and explicitly tolerates a missing glossary;
+        # the CLI error handling must not turn that into a failure.
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, _ = run_main(['status', tmp])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)['meta_files_consumed'], 0)
 
 
 if __name__ == '__main__':
