@@ -14,6 +14,11 @@ import _mab_html  # noqa: E402
 
 
 LANG_CFG = {"lang_attr": "ru", "font_family": "serif", "toc_label": "Оглавление"}
+OTHER_LANG_CFG = {
+    "lang_attr": "en",
+    "font_family": "Georgia, serif",
+    "toc_label": "Contents",
+}
 
 TEMPLATE = """<!DOCTYPE html>
 <html lang="$lang$">
@@ -71,7 +76,10 @@ class SanitizeHtmlBodyTests(unittest.TestCase):
 
         body = "<a href='javascript:alert(\"pwned\")'>x</a>"
         cleaned = _mab_html.sanitize_html_body(body)
-        self.assertEqual(cleaned, "<a href='#'>x</a>")
+        # Attribute quoting is normalised by the re-serialising sanitizer;
+        # what matters is that the whole value was replaced.
+        self.assertEqual(cleaned, '<a href="#">x</a>')
+        self.assertNotIn("pwned", cleaned)
 
     def test_leaves_ordinary_markup_untouched(self):
         body = '<h1 id="ch-1">Глава</h1><p>текст <b>жирный</b> и <img src="a.png" alt="картинка"></p>'
@@ -114,6 +122,130 @@ class ApplyTemplateEscapingTests(unittest.TestCase):
         self.assertIn('content="Л. Н. Толстой"', html)
 
 
+class SanitizeHtmlBodyBypassTests(unittest.TestCase):
+    """Payloads that walked straight through the old regex denylist.
+
+    The old sanitizer only understood quoted attribute values and only checked
+    href on <a>, so an unquoted onerror, a javascript: iframe or a formaction
+    all survived into book.html - which is opened in a browser.
+    """
+
+    def _clean(self, body):
+        return _mab_html.sanitize_html_body(body)
+
+    def test_unquoted_event_handler(self):
+        cleaned = self._clean('<p>ok</p><img src=x onerror=alert(1)>')
+        self.assertNotIn("onerror", cleaned.lower())
+        self.assertNotIn("alert(1)", cleaned)
+        self.assertIn('<img src="x">', cleaned)
+
+    def test_unquoted_event_handler_on_any_element(self):
+        cleaned = self._clean('<body onload=alert(1)><p>x</p></body>')
+        self.assertNotIn("onload", cleaned.lower())
+        self.assertNotIn("alert(1)", cleaned)
+
+    def test_iframe_with_javascript_url_is_removed_with_contents(self):
+        cleaned = self._clean('<p>a</p><iframe src="javascript:alert(1)"></iframe><p>b</p>')
+        self.assertNotIn("iframe", cleaned.lower())
+        self.assertNotIn("javascript:", cleaned.lower())
+
+    def test_formaction_is_treated_as_a_url(self):
+        cleaned = self._clean('<button formaction="javascript:alert(1)">go</button>')
+        self.assertNotIn("javascript:", cleaned.lower())
+
+    def test_entity_encoded_scheme(self):
+        cleaned = self._clean('<a href="java&#115;cript:alert(1)">x</a>')
+        self.assertNotIn("script:", cleaned.lower())
+        self.assertIn('href="#"', cleaned)
+
+    def test_control_characters_inside_the_scheme(self):
+        # Browsers strip tabs/newlines inside a scheme; the sanitizer must see
+        # the same URL they do.
+        cleaned = self._clean('<a href="jav&#x09;ascript:alert(1)">x</a>')
+        self.assertNotIn("ascript:", cleaned.lower())
+        self.assertIn('href="#"', cleaned)
+
+    def test_object_and_embed_are_removed(self):
+        cleaned = self._clean(
+            '<object data="javascript:alert(1)"></object>'
+            '<embed src="evil.swf"><p>text</p>'
+        )
+        self.assertNotIn("object", cleaned.lower())
+        self.assertNotIn("embed", cleaned.lower())
+        self.assertIn("<p>text</p>", cleaned)
+
+    def test_script_inside_svg_is_removed(self):
+        cleaned = self._clean('<svg><script>alert(1)</script></svg>')
+        self.assertNotIn("script", cleaned.lower())
+        self.assertIn("<svg>", cleaned)
+
+    def test_meta_refresh_is_removed(self):
+        cleaned = self._clean('<meta http-equiv="refresh" content="0;url=javascript:alert(1)">')
+        self.assertNotIn("http-equiv", cleaned.lower())
+        self.assertNotIn("refresh", cleaned.lower())
+
+    def test_style_attribute_with_javascript_url(self):
+        cleaned = self._clean('<div style="background:url(javascript:alert(1))">x</div>')
+        self.assertNotIn("javascript:", cleaned.lower())
+        self.assertIn("<div>x</div>", cleaned)
+
+    def test_data_urls(self):
+        picture = '<img src="data:image/png;base64,iVBORw0KGgo=">'
+        self.assertEqual(self._clean(picture), picture)
+
+        # Calibre stores bitmap illustrations as base64 SVG wrappers; they are
+        # a picture, not a document, so they must survive.
+        svg_picture = '<img src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=">'
+        self.assertEqual(self._clean(svg_picture), svg_picture)
+
+        document = '<a href="data:text/html,<script>alert(1)</script>">x</a>'
+        self.assertIn('href="#"', self._clean(document))
+
+        # ...but an SVG is not a navigation target: opening it as a document
+        # could run its script.
+        navigation = '<a href="data:image/svg+xml,<svg onload=alert(1)>">x</a>'
+        self.assertIn('href="#"', self._clean(navigation))
+
+    def test_escaped_markup_in_prose_survives(self):
+        # A book about HTML legitimately contains &lt;script&gt; as text; that
+        # is not a script and must not be stripped.
+        body = "<p>write &lt;script&gt;alert(1)&lt;/script&gt; to test</p>"
+        self.assertEqual(self._clean(body), body)
+
+    def test_entities_and_preformatted_text_are_preserved(self):
+        body = '<pre><code>a &amp; b &lt; c</code></pre><p title="a &amp; b">x</p>'
+        self.assertEqual(self._clean(body), body)
+
+    def test_self_closing_tags_keep_their_slash(self):
+        # Inline SVG relies on <path/> semantics: a bare <path> would nest the
+        # rest of the illustration inside it.
+        cleaned = self._clean(
+            '<svg viewBox="0 0 10 10"><path d="M0 0"/><rect width="1"/></svg>'
+        )
+        self.assertIn('<svg viewbox=', cleaned.lower())
+        self.assertIn('viewBox="0 0 10 10"', cleaned)
+        self.assertIn('<path d="M0 0" />', cleaned)
+        self.assertIn('<rect width="1" />', cleaned)
+
+    def test_svg_names_keep_their_case(self):
+        # XHTML/EPUB consumers are case-sensitive: lowercase "viewbox" or
+        # "lineargradient" is not a valid SVG element there.
+        cleaned = self._clean(
+            '<svg viewBox="0 0 4 4"><linearGradient id="g" gradientUnits="userSpaceOnUse">'
+            '</linearGradient><clipPath id="c"></clipPath></svg>'
+        )
+        self.assertIn('viewBox="0 0 4 4"', cleaned)
+        self.assertIn('<linearGradient id="g" gradientUnits="userSpaceOnUse">', cleaned)
+        self.assertIn('</linearGradient>', cleaned)
+        self.assertIn('<clipPath id="c">', cleaned)
+
+    def test_attribute_values_are_escaped_on_re_serialisation(self):
+        # The value is re-emitted from the parsed form, so a quote inside an
+        # attribute cannot break out of the tag.
+        cleaned = self._clean('<p title="a&quot;b">x</p>')
+        self.assertEqual(cleaned, '<p title="a&quot;b">x</p>')
+
+
 class HtmlBuildStampTests(unittest.TestCase):
     """convert_md_to_html produces book_doc.html AND book.html.
 
@@ -123,11 +255,6 @@ class HtmlBuildStampTests(unittest.TestCase):
     """
 
     MD = "# Chapter 1\n\nSome chapter text.\n"
-    OTHER_LANG_CFG = {
-        "lang_attr": "en",
-        "font_family": "Georgia, serif",
-        "toc_label": "Contents",
-    }
 
     def _write_md(self, tmp, text=None):
         Path(tmp, "output.md").write_text(text or self.MD, encoding="utf-8")
@@ -203,7 +330,7 @@ class HtmlBuildStampTests(unittest.TestCase):
             self._write_md(tmp)
             self.assertTrue(self._run(tmp)[0])
 
-            ok, out = self._run(tmp, cfg=self.OTHER_LANG_CFG)
+            ok, out = self._run(tmp, cfg=OTHER_LANG_CFG)
             web_html = Path(tmp, "book.html").read_text(encoding="utf-8")
 
             self.assertTrue(ok)

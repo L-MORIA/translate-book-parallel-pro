@@ -102,6 +102,12 @@ def main():
         '\n<script>alert("pwned-script")</script>'
         '\n<p onload="alert(\'pwned-handler\')">x</p>'
         '\n<a href="javascript:alert(\'pwned-url\')">link</a>\n'
+        # Variants that walked through the old regex denylist: unquoted value,
+        # javascript: outside <a href>, and an entity-encoded scheme.
+        "\n<p onkeydown=alert('pwned-unquoted')>y</p>"
+        '\n<iframe src="javascript:alert(\'pwned-iframe\')"></iframe>'
+        '\n<button formaction="javascript:alert(\'pwned-form\')">go</button>'
+        '\n<a href="java&#115;cript:alert(\'pwned-entity\')">x</a>\n'
     )
 
     sys.path.insert(0, str(SCRIPTS))
@@ -122,10 +128,21 @@ def main():
     if not book_html.is_file():
         fail("book.html not generated")
     html = book_html.read_text(encoding="utf-8")
-    if "pwned-script" in html or "pwned-handler" in html or "pwned-url" in html:
-        fail("hostile payload survived into book.html — sanitizer regression")
-    if "onerror" in html or "javascript:" in html.lower():
-        fail("event handler / javascript: URL survived into book.html")
+    survived = [
+        marker for marker in (
+            "pwned-script", "pwned-handler", "pwned-url", "pwned-unquoted",
+            "pwned-iframe", "pwned-form", "pwned-entity",
+        )
+        if marker in html
+    ]
+    if survived:
+        fail(f"hostile payload survived into book.html: {', '.join(survived)}")
+    lower_html = html.lower()
+    # Attribute names may remain when their value was neutralised (e.g.
+    # <button formaction="#">), so check for the active parts only.
+    for leftover in ("onerror", "onload", "onkeydown", "javascript:", "<iframe"):
+        if leftover in lower_html:
+            fail(f"{leftover} survived into book.html - sanitizer regression")
 
     print("=== [5/5] TOC insertion ===")
     if not merge_and_build.add_toc(str(TEMP_DIR)):

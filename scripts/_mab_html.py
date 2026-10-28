@@ -13,6 +13,7 @@ import json
 import subprocess
 import tempfile
 import html as _html_lib
+from html.parser import HTMLParser
 
 from _mab_common import SCRIPT_DIR
 from _mab_images import _check_generated_html_sanity
@@ -182,6 +183,220 @@ def convert_with_basic_regex(md_file, html_file, title):
         return False
 
 
+# Elements that exist only to run or embed active content. They are dropped
+# together with their children: removing the tag but keeping the contents just
+# moves the payload into the page text.
+ACTIVE_TAGS = frozenset({
+    'script', 'iframe', 'object', 'embed', 'applet', 'frame', 'frameset',
+    'base', 'param', 'meta', 'link',
+})
+
+# Active tags with no closing tag - nothing to skip over.
+VOID_ACTIVE_TAGS = frozenset({'base', 'param', 'meta', 'link', 'embed', 'frame'})
+
+# Attributes whose value is a URL and therefore needs a scheme check.
+URL_ATTRS = frozenset({
+    'href', 'src', 'srcset', 'action', 'formaction', 'poster', 'cite',
+    'background', 'longdesc', 'usemap', 'data', 'dynsrc', 'lowsrc',
+    'xlink:href',
+})
+
+# Attributes that are dangerous whatever their value.
+DROPPED_ATTRS = frozenset({'srcdoc'})
+
+# data: URLs are the normal way EPUBs embed pictures; everything else
+# (data:text/html and friends) is not book content. SVG counts here because
+# Calibre wraps bitmap illustrations in it, and an SVG loaded through an image
+# attribute cannot run script - but it stays out of navigation contexts, where
+# the payload would be opened as a document.
+ALLOWED_DATA_IMAGE_PREFIX = 'data:image/'
+ALLOWED_DATA_NAV_PREFIXES = (
+    'data:image/png', 'data:image/jpeg', 'data:image/jpg', 'data:image/gif',
+    'data:image/webp', 'data:image/bmp', 'data:image/x-icon',
+)
+
+# Tags that load their value as a picture (image context, no script execution).
+IMAGE_CONTEXT_TAGS = frozenset({
+    'img', 'image', 'source', 'picture', 'video', 'audio', 'track', 'input',
+})
+
+# Browsers ignore whitespace and control characters inside a URL scheme
+# ("java\tscript:" runs as javascript:), so compare the normalised form.
+_URL_NOISE_RE = re.compile(r'[\s\u0000-\u001f\u007f]+')
+
+
+def _has_active_scheme(tag, attr_name, value):
+    """True when a URL attribute value would execute script or load a document."""
+    if attr_name == 'srcset':
+        candidates = [part.strip().split(' ')[0] for part in value.split(',') if part.strip()]
+    else:
+        candidates = [value]
+    image_context = tag in IMAGE_CONTEXT_TAGS
+    for candidate in candidates:
+        normalized = _URL_NOISE_RE.sub('', candidate).lower()
+        if normalized.startswith(('javascript:', 'vbscript:')):
+            return True
+        if normalized.startswith('data:'):
+            allowed = (
+                ALLOWED_DATA_IMAGE_PREFIX if image_context else ALLOWED_DATA_NAV_PREFIXES
+            )
+            if not normalized.startswith(allowed):
+                return True
+    return False
+
+
+# HTMLParser lowercases element and attribute names, which is correct for HTML
+# but wrong for inline SVG: XHTML/EPUB readers are case-sensitive, so "viewbox"
+# is not "viewBox". These tables restore the names while inside an <svg>
+# subtree (browsers also fix them up when parsing HTML, Calibre's XHTML output
+# does not have to).
+SVG_ELEMENT_CASE = {name.lower(): name for name in (
+    'linearGradient', 'radialGradient', 'clipPath', 'foreignObject', 'textPath',
+    'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite',
+    'feConvolveMatrix', 'feDiffuseLighting', 'feDisplacementMap',
+    'feDistantLight', 'feDropShadow', 'feFlood', 'feFuncA', 'feFuncB',
+    'feFuncG', 'feFuncR', 'feGaussianBlur', 'feImage', 'feMerge', 'feMergeNode',
+    'feMorphology', 'feOffset', 'fePointLight', 'feSpecularLighting',
+    'feSpotLight', 'feTile', 'feTurbulence', 'animateMotion',
+    'animateTransform', 'glyphRef', 'altGlyph',
+)}
+
+SVG_ATTR_CASE = {name.lower(): name for name in (
+    'viewBox', 'preserveAspectRatio', 'gradientUnits', 'gradientTransform',
+    'patternUnits', 'patternContentUnits', 'patternTransform', 'clipPathUnits',
+    'maskUnits', 'maskContentUnits', 'markerUnits', 'markerWidth',
+    'markerHeight', 'refX', 'refY', 'spreadMethod', 'startOffset', 'textLength',
+    'lengthAdjust', 'stdDeviation', 'baseFrequency', 'numOctaves', 'stitchTiles',
+    'surfaceScale', 'specularConstant', 'specularExponent', 'diffuseConstant',
+    'kernelMatrix', 'kernelUnitLength', 'keyPoints', 'keySplines', 'keyTimes',
+    'calcMode', 'repeatCount', 'repeatDur', 'attributeName', 'attributeType',
+    'pathLength', 'preserveAlpha', 'primitiveUnits', 'filterUnits', 'filterRes',
+    'xChannelSelector', 'yChannelSelector',
+)}
+
+
+def _style_is_active(value):
+    """True when a style attribute tries to run script (legacy or URL-based)."""
+    normalized = _URL_NOISE_RE.sub('', value).lower()
+    return (
+        'expression(' in normalized
+        or 'javascript:' in normalized
+        or 'vbscript:' in normalized
+        or 'data:text/html' in normalized
+    )
+
+
+class _SanitizingParser(HTMLParser):
+    """Re-emit HTML with active content removed.
+
+    A denylist of regexes over raw markup cannot keep up with HTML's parsing
+    rules: it has to know about unquoted attribute values, entity-encoded
+    schemes and mixed case to see what the browser sees. HTMLParser already
+    implements those rules and unescapes attribute values for us, so the
+    checks below run on browser-visible values and the tag is rebuilt from the
+    parsed form.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.parts = []
+        self._skip_tag = None
+        self._skip_depth = 0
+        self._svg_depth = 0
+
+    # -- markup ------------------------------------------------------------
+    def handle_starttag(self, tag, attrs):
+        if self._skip_tag is not None:
+            if tag == self._skip_tag:
+                self._skip_depth += 1
+            return
+        if tag in ACTIVE_TAGS:
+            if tag not in VOID_ACTIVE_TAGS:
+                self._skip_tag = tag
+                self._skip_depth = 1
+            return
+        svg_context = self._svg_depth > 0 or tag == 'svg'
+        self.parts.append(self._format_tag(tag, attrs, svg_context=svg_context))
+        if tag == 'svg':
+            self._svg_depth += 1
+
+    def handle_startendtag(self, tag, attrs):
+        if self._skip_tag is not None or tag in ACTIVE_TAGS:
+            return
+        # Keep the self-closing slash: in foreign content (inline SVG) <path/>
+        # and <path> mean different trees, so dropping it would nest the rest
+        # of the illustration inside the first element.
+        self.parts.append(
+            self._format_tag(tag, attrs, self_closing=True, svg_context=self._svg_depth > 0)
+        )
+
+    def handle_endtag(self, tag):
+        if self._skip_tag is not None:
+            if tag == self._skip_tag:
+                self._skip_depth -= 1
+                if self._skip_depth == 0:
+                    self._skip_tag = None
+            return
+        if tag == 'svg' and self._svg_depth > 0:
+            self._svg_depth -= 1
+            self.parts.append('</svg>')
+            return
+        name = SVG_ELEMENT_CASE.get(tag, tag) if self._svg_depth > 0 else tag
+        self.parts.append(f'</{name}>')
+
+    # -- text and declarations (kept verbatim, entities are already escaped) --
+    def handle_data(self, data):
+        if self._skip_tag is None:
+            self.parts.append(data)
+
+    def handle_entityref(self, name):
+        if self._skip_tag is None:
+            self.parts.append(f'&{name};')
+
+    def handle_charref(self, name):
+        if self._skip_tag is None:
+            self.parts.append(f'&#{name};')
+
+    def handle_comment(self, data):
+        if self._skip_tag is None:
+            self.parts.append(f'<!--{data}-->')
+
+    def handle_decl(self, decl):
+        if self._skip_tag is None:
+            self.parts.append(f'<!{decl}>')
+
+    def handle_pi(self, data):
+        # <?php ... ?> or similar - never legitimate book content.
+        return
+
+    def unknown_decl(self, data):
+        return
+
+    # -- helpers -----------------------------------------------------------
+    @staticmethod
+    def _format_tag(tag, attrs, self_closing=False, svg_context=False):
+        if svg_context:
+            tag = SVG_ELEMENT_CASE.get(tag, tag)
+        rendered = []
+        for name, value in attrs:
+            if name.startswith('on') or name in DROPPED_ATTRS:
+                continue
+            if svg_context:
+                name = SVG_ATTR_CASE.get(name, name)
+            if value is None:
+                rendered.append(name)
+                continue
+            if name.lower() in URL_ATTRS and _has_active_scheme(tag, name.lower(), value):
+                value = '#'
+            elif name.lower() == 'style' and _style_is_active(value):
+                continue
+            rendered.append(f'{name}="{_html_lib.escape(value, quote=True)}"')
+        closing = ' />' if self_closing else '>'
+        if rendered:
+            return f'<{tag} {" ".join(rendered)}{closing}'
+        return f'<{tag}{closing}'
+
+
 def sanitize_html_body(body):
     """Strip active content from book body HTML.
 
@@ -190,21 +405,17 @@ def sanitize_html_body(body):
     blocks, event-handler attributes and javascript: URLs planted in a hostile
     source would otherwise survive into book.html, which the user opens in a
     browser.
+
+    The markup is parsed with the stdlib HTML parser and re-emitted, rather
+    than pattern-matched: HTML's own rules (unquoted values, entities, mixed
+    case, nested quoting) are what decide which attribute a browser will see,
+    so anything that only "looks" like a payload to a regex — or that hides
+    from one — is handled the same way the browser handles it.
     """
-    body = re.sub(r'<script\b[^>]*>.*?</script\s*>', '', body,
-                  flags=re.IGNORECASE | re.DOTALL)
-    body = re.sub(r'<script\b[^>]*/?>', '', body, flags=re.IGNORECASE)
-    body = re.sub(r'\son[a-z]+\s*=\s*"[^"]*"', '', body, flags=re.IGNORECASE)
-    body = re.sub(r"\son[a-z]+\s*=\s*'[^']*'", '', body, flags=re.IGNORECASE)
-    # Consume the whole quoted attribute value (quotes of the other kind may
-    # appear inside it, e.g. href="javascript:alert('x')")
-    body = re.sub(
-        r'(<a\b[^>]*?href\s*=\s*)(["\'])\s*javascript:(?:(?!\2).)*\2',
-        r'\1\2#\2',
-        body,
-        flags=re.IGNORECASE,
-    )
-    return body
+    parser = _SanitizingParser()
+    parser.feed(body)
+    parser.close()
+    return ''.join(parser.parts)
 
 
 def apply_template_to_html(html_content, template_file, output_file, title, lang_cfg, author=None):
