@@ -14,6 +14,7 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import _mab_formats  # noqa: E402
 import merge_and_build  # noqa: E402
 
 
@@ -105,6 +106,38 @@ class GenerateFormatTests(unittest.TestCase):
             cmd = run_mock.call_args.args[0]
             self.assertIn("--cover", cmd)
             self.assertIn(cover_file, cmd)
+
+
+class GenerateFormatsReturnTests(unittest.TestCase):
+    """generate_formats() feeds an exit code: it must return a real bool."""
+
+    def test_returns_false_when_no_html_exists(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ok = merge_and_build.generate_formats(temp_dir, "ru")
+        self.assertIs(ok, False)
+        self.assertIsInstance(ok, bool)
+
+    def _run_with(self, temp_dir, failing_ext=None):
+        def fake_generate(html_file, out_dir, ext, lang_attr, cover=None):
+            if ext == failing_ext:
+                return None
+            path = os.path.join(out_dir, f"book{ext}")
+            Path(path).write_text("data", encoding="utf-8")
+            return path
+
+        Path(temp_dir, "book_doc.html").write_text("<html></html>", encoding="utf-8")
+        with mock.patch.object(_mab_formats, "generate_format", side_effect=fake_generate):
+            return merge_and_build.generate_formats(temp_dir, "ru")
+
+    def test_returns_true_when_all_formats_succeed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ok = self._run_with(temp_dir)
+        self.assertIs(ok, True)
+
+    def test_returns_false_when_one_format_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ok = self._run_with(temp_dir, failing_ext=".pdf")
+        self.assertIs(ok, False)
 
 
 class MissingCoverPathTests(unittest.TestCase):

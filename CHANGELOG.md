@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.2.7 — `generate_formats()` returns a real bool on the empty-directory path (2026-10-28)
+
+- **Fixed** `_mab_formats.py` (C-08): `generate_formats()` is declared to return `bool` and its callers key on it (`integration_smoke.py`, `merge_and_build.main()`), but the "no HTML files" branch ended with a bare `return`, i.e. `None`. Any future `is False` / `== False` check would silently misread that as success
+- **Behaviour**: that branch now returns `False`, and the docstring states the contract (True only when every format was produced). `merge_and_build.main()` behaviour is unchanged — `None` and `False` were both falsy — but the cause now matches the message
+- **Tests**: 322 → 325, new `GenerateFormatsReturnTests`: empty dir → `False` (and `isinstance(..., bool)`), all three formats succeeding → `True`, one failing → `False`
+
 ## v1.2.6 — `merge_meta.py`: readable error instead of a traceback when the glossary is missing (2026-10-28)
 
 - **Fixed** `merge_meta.py` (C-07): `prepare-merge` and `apply-merge` call `load_glossary()`, which raises `FileNotFoundError` (and `ValueError` for unreadable JSON or a schema mismatch); `main()` did not catch either, so a missing `glossary.json` produced a raw Python traceback. SKILL.md §3.5 builds the glossary before translation, but the skill also allows working without one and the file can be deleted by hand — that is a user-fixable input problem, not a crash

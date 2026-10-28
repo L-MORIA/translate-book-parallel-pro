@@ -92,7 +92,11 @@ def generate_format(html_file, temp_dir, output_ext, lang_attr, cover=None):
 
 
 def generate_formats(temp_dir, lang_attr, cover=None):
-    """Generate DOCX, EPUB, and PDF with result summary"""
+    """Generate DOCX, EPUB, and PDF with result summary.
+
+    Returns True only when every format was produced, False otherwise - the
+    callers key on the exit code, so this must never fall through to None.
+    """
     print("=== Generating output formats ===")
 
     html_file = os.path.join(temp_dir, "book_doc.html")
@@ -102,7 +106,7 @@ def generate_formats(temp_dir, lang_attr, cover=None):
             html_file = max(html_files, key=os.path.getmtime)
         else:
             print("No HTML files found for format generation")
-            return
+            return False
 
     results = {}
     for ext in ['.docx', '.epub', '.pdf']:
