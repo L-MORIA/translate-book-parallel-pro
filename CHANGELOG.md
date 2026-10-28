@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.5 — SKILL.md: self-contradictory escaping example, Chinese leakage in the Russian prompt (2026-10-28)
+
+- **Fixed** `SKILL.md` (C-06): the "correct" example for escaping quotes inside an `alt` attribute was byte-for-byte the example declared wrong on the line above, so the only place documenting attribute escaping gave the translator two opposite instructions. The correct line now shows `&quot;` and typographic quotes only; the straight inner quote appears exclusively in the wrong example
+- **Fixed**: Chinese words had leaked into the Russian sub-agent prompt — `номера引用` → `номера ссылок`, `и跨 fragment ссылок` → `межфрагментных ссылок`. `SKILL.md` is an executable prompt (sub-agents receive these lines verbatim), not documentation
+- **Tests**: 312 → 318, new `tests/test_skill_md.py`: the Russian prompt block is scanned for CJK characters (only that block — the Chinese prompts and Chinese glossary examples elsewhere are intentional), wrong and correct `alt` examples must differ, every correct example must parse back into exactly one `alt` attribute with `喝我` intact, and the wrong example must really carry the extra quotes that break the attribute. Negative control: 4 of the 6 fail against the pre-fix `SKILL.md`
+- **Not changed**: the intentional Chinese examples elsewhere in the file (the `zh` prompt, glossary JSON samples) are legitimate and stay
+
 ## v1.2.4 — Security: HTML sanitizer now parses instead of pattern-matching (2026-10-28)
 
 - **Fixed** `_mab_html.py` (C-04): `sanitize_html_body()` was a denylist of regexes over raw markup, so it only recognised quoted attribute values and only scheme-checked `href` on `<a>`. Unquoted `onerror=`, `<iframe src="javascript:">`, `<button formaction="javascript:">`, `<object data=…>`, `<meta http-equiv="refresh">` and entity-encoded schemes all reached `book.html`, which the user opens in a browser. The body is now parsed with the stdlib HTML parser and re-emitted: active elements (`script`, `iframe`, `object`, `embed`, `applet`, `frame`, `frameset`, `base`, `param`, `meta`, `link`) are dropped with their contents, every `on*` attribute and `srcdoc` is dropped, and URL attributes (`href`, `src`, `srcset`, `action`, `formaction`, `poster`, `cite`, `background`, `longdesc`, `usemap`, `data`, `dynsrc`, `lowsrc`, `xlink:href`) are checked on the value the browser would see — entities decoded, whitespace and control characters stripped. `style` attributes carrying `expression()`, `javascript:` or `data:text/html` are dropped
