@@ -459,7 +459,7 @@ python {baseDir}/scripts/merge_and_build.py --temp-dir "<temp_dir>" --title "<tr
 If the user provided `epub_cover`, add `--cover "<epub_cover>"`. If the user
 provided `export_name`, add `--export-name "<export_name>"`.
 
-The `--cleanup` flag removes intermediate files (chunks, input.html, etc.) after a fully successful build. If the user asked to keep intermediates, omit `--cleanup`.
+The `--cleanup` flag removes rebuildable intermediates (`input.html`, `input.md`, `output.html`) after a fully successful build. The chunks and the `output_chunk*.md` translations are kept, so the book can be rebuilt later (new title, font, cover) without translating it again. If the user asked to keep intermediates, omit `--cleanup`. Add `--cleanup-translations` only when the temp dir is disposable: it deletes the chunks and the translations too, and rebuilding then requires a full retranslation.
 
 The script reads `output_lang` from `config.txt` automatically. Optional overrides: `--lang`, `--author`.
 

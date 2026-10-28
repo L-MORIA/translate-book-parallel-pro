@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.9 — `--cleanup` no longer destroys the translations (2026-10-28)
+
+- **Fixed** `merge_and_build.py` (C-09): `--cleanup` deleted `chunk*.md` **and** `output_chunk*.md`, so after a successful build the book could not be rebuilt at all — `validate_for_merge` needs the output chunks, and changing the title, font, cover or export name then required translating the whole book again. `translate-launcher.bat` always passes `--cleanup`, so launcher users hit this on every build
+- **Behaviour**: `--cleanup` now removes only the rebuildable intermediates (`input.html`, `input.md`, `output.html`) and keeps the chunks/translations, printing what it removed and what it kept. Deleting the translations is a separate, explicit `--cleanup-translations` (requires `--cleanup`), and it states that a rebuild will need a retranslation. The deletion plan is printed before anything is removed
+- **SKILL.md**: §7 documents the new split; the `--cleanup` example stays valid and is now non-destructive
+- **Tests**: 333 → 337, new `CleanupIntermediateFilesTests`: default cleanup keeps `chunk*.md`/`output_chunk*.md` and the final formats, `--cleanup-translations` deletes them, the output names what is removed/kept, and `--cleanup-translations` without `--cleanup` exits 2
+- **Verified on a real 7-chunk book with Calibre 9.11**: build with `--cleanup` exits 0, keeps 14 chunk files; a second build with a different `--title` succeeds and the new title appears in `book.html`; `--cleanup-translations` leaves only the final artifacts
+
 ## v1.2.8 — Calibre: SVG-wrapped illustrations no longer break DOCX and no longer vanish from EPUB/PDF (2026-10-28)
 
 - **Fixed** `calibre_html_publish.py`: Calibre's HTMLZ extraction stores each bitmap illustration as `<img src="data:image/svg+xml;base64,…">` wrapping `<svg><image href="images/000000.jpg"/></svg>`. That wrapper survived the markdown round-trip and Calibre 9.11's DOCX writer abort with `AttributeError: 'NoneType' object has no attribute 'encode'` — the DOCX build failed and the whole build exited 1. Before rendering, `prepare_html_for_conversion()` now rewrites such an `<img>` to point at the bitmap it wraps (`src="images/000000.jpg"`), which keeps the picture and makes DOCX conversion succeed. Plain raster `data:` URIs, genuine vector SVGs without an inner bitmap, and unparseable payloads are left untouched

@@ -140,6 +140,60 @@ class GenerateFormatsReturnTests(unittest.TestCase):
         self.assertIs(ok, False)
 
 
+class CleanupIntermediateFilesTests(unittest.TestCase):
+    """--cleanup must never silently destroy the only copy of the translation."""
+
+    def _populate(self, temp_dir):
+        for name in ('chunk0001.md', 'chunk0002.md',
+                     'output_chunk0001.md', 'output_chunk0002.md',
+                     'input.md', 'input.html', 'output.html',
+                     'book.epub', 'book.html'):
+            Path(temp_dir, name).write_text('x', encoding='utf-8')
+
+    def test_default_cleanup_keeps_chunks_and_translations(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self._populate(temp_dir)
+            with contextlib.redirect_stdout(io.StringIO()):
+                merge_and_build.cleanup_intermediate_files(temp_dir)
+            left = set(os.listdir(temp_dir))
+        self.assertEqual(
+            left,
+            {'chunk0001.md', 'chunk0002.md', 'output_chunk0001.md',
+             'output_chunk0002.md', 'book.epub', 'book.html'},
+        )
+
+    def test_remove_chunks_deletes_translations_too(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self._populate(temp_dir)
+            with contextlib.redirect_stdout(io.StringIO()):
+                merge_and_build.cleanup_intermediate_files(temp_dir, remove_chunks=True)
+            left = set(os.listdir(temp_dir))
+        self.assertEqual(left, {'book.epub', 'book.html'})
+
+    def test_prints_what_it_removes_and_what_it_keeps(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self._populate(temp_dir)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                merge_and_build.cleanup_intermediate_files(temp_dir)
+        text = out.getvalue()
+        self.assertIn('input.html', text)
+        self.assertIn('input.md', text)
+        self.assertIn('output.html', text)
+        self.assertIn('Kept 4 chunk file(s)', text)
+        self.assertIn('--cleanup-translations', text)
+
+    def test_cleanup_translations_requires_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.object(
+                sys, 'argv',
+                ['merge_and_build.py', '--temp-dir', temp_dir, '--cleanup-translations'],
+            ), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as exc:
+                    merge_and_build.main()
+        self.assertEqual(exc.exception.code, 2)
+
+
 class MissingCoverPathTests(unittest.TestCase):
     @unittest.skipUnless(
         "cover" in inspect.signature(merge_and_build.generate_format).parameters,

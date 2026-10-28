@@ -71,36 +71,58 @@ from _mab_formats import (
 # Intermediate-artifact cleanup (used only by main)
 # =============================================================================
 
-def cleanup_intermediate_files(temp_dir):
-    """Remove intermediate artifacts, keeping only final outputs."""
+# Rebuildable from the source book (or from output.md) at any time.
+REGENERABLE_INTERMEDIATES = ['input.html', 'input.md', 'output.html']
+# chunk*.md are the source slices, output_chunk*.md are the translations.
+# Deleting the translations means the book can only be rebuilt by translating
+# it again, so that is opt-in.
+CHUNK_PATTERNS = ['chunk*.md', 'output_chunk*.md']
+
+
+def cleanup_intermediate_files(temp_dir, remove_chunks=False):
+    """Remove intermediate artifacts, keeping the final outputs.
+
+    By default the translation chunks survive: without output_chunk*.md the
+    book cannot be rebuilt (new title, font, cover, export name) unless the
+    whole book is translated from scratch. `remove_chunks=True` is the
+    explicit "I am done with this temp dir" switch.
+    """
     print("\n=== Cleaning up intermediate files ===")
 
-    removed = []
+    targets = [
+        name for name in REGENERABLE_INTERMEDIATES
+        if os.path.exists(os.path.join(temp_dir, name))
+    ]
+    chunk_paths = []
+    if remove_chunks:
+        for pattern in CHUNK_PATTERNS:
+            chunk_paths.extend(sorted(glob.glob(os.path.join(temp_dir, pattern))))
 
-    # Remove chunk*.md and output_chunk*.md
-    for pattern in ['chunk*.md', 'output_chunk*.md']:
-        for filepath in glob.glob(os.path.join(temp_dir, pattern)):
-            os.remove(filepath)
-            removed.append(os.path.basename(filepath))
-
-    # Remove specific intermediate files
-    for name in ['input.html', 'input.md', 'output.html']:
-        filepath = os.path.join(temp_dir, name)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            removed.append(name)
-
-    if removed:
-        print(f"Removed {len(removed)} intermediate file(s):")
-        # Summarize chunk files instead of listing each one
-        chunk_files = [f for f in removed if 'chunk' in f]
-        other_files = [f for f in removed if 'chunk' not in f]
-        if chunk_files:
-            print(f"  {len(chunk_files)} chunk files (chunk*.md, output_chunk*.md)")
-        for f in other_files:
-            print(f"  {f}")
+    # Say what is about to go before touching it.
+    if targets or chunk_paths:
+        print(f"Removing {len(targets) + len(chunk_paths)} intermediate file(s):")
+        for name in targets:
+            print(f"  {name}")
+        if chunk_paths:
+            print(f"  {len(chunk_paths)} chunk files (chunk*.md, output_chunk*.md)")
     else:
         print("No intermediate files to remove.")
+
+    for name in targets:
+        os.remove(os.path.join(temp_dir, name))
+    for path in chunk_paths:
+        os.remove(path)
+
+    if remove_chunks:
+        print("Translations were deleted too - rebuilding this book requires translating it again.")
+        return
+
+    kept = 0
+    for pattern in CHUNK_PATTERNS:
+        kept += len(glob.glob(os.path.join(temp_dir, pattern)))
+    if kept:
+        print(f"Kept {kept} chunk file(s): the book can be rebuilt without translating again.")
+        print("Pass --cleanup-translations to delete them as well.")
 
 
 # =============================================================================
@@ -115,10 +137,14 @@ def main():
     parser.add_argument('--lang', default=None, help='Output language code (override config)')
     parser.add_argument('--cover', default=None, help='Cover image path for EPUB output')
     parser.add_argument('--export-name', default=None, help='Optional filename stem for exported alias copies')
-    parser.add_argument('--cleanup', action='store_true', help='Remove intermediate artifacts after successful build')
+    parser.add_argument('--cleanup', action='store_true', help='Remove rebuildable intermediates after a successful build (translation chunks are kept)')
+    parser.add_argument('--cleanup-translations', action='store_true', help='With --cleanup, also delete chunk*.md and output_chunk*.md (a rebuild then needs retranslation)')
 
     args = parser.parse_args()
     temp_dir = args.temp_dir
+
+    if args.cleanup_translations and not args.cleanup:
+        parser.error("--cleanup-translations requires --cleanup")
 
     if not os.path.isdir(temp_dir):
         print(f"Error: Temp directory not found: {temp_dir}")
@@ -191,7 +217,7 @@ def main():
     # Cleanup intermediate artifacts if requested (skip if any format failed)
     if args.cleanup:
         if all_formats_ok:
-            cleanup_intermediate_files(temp_dir)
+            cleanup_intermediate_files(temp_dir, remove_chunks=args.cleanup_translations)
         else:
             print("\nSkipping cleanup — some formats failed. Intermediate files kept for diagnosis/retry.")
 
