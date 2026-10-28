@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.8 — Calibre: SVG-wrapped illustrations no longer break DOCX and no longer vanish from EPUB/PDF (2026-10-28)
+
+- **Fixed** `calibre_html_publish.py`: Calibre's HTMLZ extraction stores each bitmap illustration as `<img src="data:image/svg+xml;base64,…">` wrapping `<svg><image href="images/000000.jpg"/></svg>`. That wrapper survived the markdown round-trip and Calibre 9.11's DOCX writer abort with `AttributeError: 'NoneType' object has no attribute 'encode'` — the DOCX build failed and the whole build exited 1. Before rendering, `prepare_html_for_conversion()` now rewrites such an `<img>` to point at the bitmap it wraps (`src="images/000000.jpg"`), which keeps the picture and makes DOCX conversion succeed. Plain raster `data:` URIs, genuine vector SVGs without an inner bitmap, and unparseable payloads are left untouched
+- **Impact beyond DOCX**: the wrapper also hid the illustration from EPUB and PDF — Calibre does not follow the `href` inside an SVG data URI. On the sleepy-hollow baseline `book.epub` grew from 70 KB to 336 KB and now contains `000000.jpg`, i.e. the picture is really embedded
+- **Fixed**: a failed conversion left Calibre's truncated output on disk (`book.docx` at 42 KB of a 283 KB book), and the next build then reported "Skipping .docx — already exists and up to date". `convert_html_with_calibre()` now remembers the output's previous mtime/size and deletes the file only if this run changed it (a pre-existing file that Calibre never touched is kept)
+- **Tests**: 325 → 333. `UnwrapSvgDataUriImagesTests` covers the base64 wrapper, `xlink:href` + single quotes, raster `data:` URIs, vector-only SVG, malformed base64 and the `prepare_html_for_conversion()` round-trip; two new `ConvertHtmlWithCalibreTests` pin the partial-output removal and the "don't delete an untouched previous output" case
+- **Verified with real Calibre 9.11**: `SMOKE_FORMATS=1 tests/integration_smoke.py` now reports `.docx: OK (283,729 bytes), .epub: OK (336,753 bytes), .pdf: OK (539,195 bytes)`; before the fix DOCX failed with the traceback above
+
 ## v1.2.7 — `generate_formats()` returns a real bool on the empty-directory path (2026-10-28)
 
 - **Fixed** `_mab_formats.py` (C-08): `generate_formats()` is declared to return `bool` and its callers key on it (`integration_smoke.py`, `merge_and_build.main()`), but the "no HTML files" branch ended with a bare `return`, i.e. `None`. Any future `is False` / `== False` check would silently misread that as success

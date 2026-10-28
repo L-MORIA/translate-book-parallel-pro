@@ -9,6 +9,9 @@ import os
 import sys
 import subprocess
 import argparse
+import base64
+import binascii
+import html as html_lib
 import shutil
 import re
 
@@ -90,6 +93,53 @@ def _get_pdf_font_for_lang(lang):
         return 'Georgia'
 
 
+SVG_DATA_URI_RE = re.compile(r'^data:image/svg\+xml[^,]*;base64,', re.IGNORECASE)
+IMG_TAG_RE = re.compile(r'<img\b[^>]*>', re.IGNORECASE)
+SRC_ATTR_RE = re.compile(
+    r'(?P<prefix>\bsrc\s*=\s*)(?P<quote>["\'])(?P<value>.*?)(?P=quote)',
+    re.IGNORECASE | re.DOTALL,
+)
+SVG_IMAGE_HREF_RE = re.compile(r'(?:xlink:)?href\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
+
+
+def _unwrap_svg_data_uri_images(content):
+    """Point SVG-wrapped illustrations at the bitmap they wrap.
+
+    Calibre's HTMLZ extraction stores each bitmap illustration inside an SVG
+    wrapper - <img src="data:image/svg+xml;base64,..."> containing
+    <svg><image href="images/000000.jpg"/></svg> - whose only job is scaling.
+    The wrapper survives the markdown round-trip, and Calibre's DOCX writer
+    cannot handle it: it aborts with
+    "AttributeError: 'NoneType' object has no attribute 'encode'" and leaves a
+    truncated .docx behind.  Rewriting src to the inner href keeps the picture
+    (the images/ directory sits next to work.html) and makes DOCX work again.
+
+    Anything not recognised as such a wrapper is left untouched.
+    """
+    def replace_tag(match):
+        tag = match.group(0)
+        src = SRC_ATTR_RE.search(tag)
+        if not src or not SVG_DATA_URI_RE.match(src.group('value')):
+            return tag
+        payload = SVG_DATA_URI_RE.sub('', src.group('value'))
+        try:
+            svg_text = base64.b64decode(payload).decode('utf-8', 'replace')
+        except (binascii.Error, ValueError):
+            return tag
+        href = SVG_IMAGE_HREF_RE.search(svg_text)
+        if not href:
+            return tag
+        target = html_lib.unescape(href.group(1)).strip()
+        # A raster data URI is fine as-is; another SVG is not a fix.
+        if not target or target.lower().startswith('data:image/svg'):
+            return tag
+        quote = src.group('quote')
+        new_src = f'{src.group("prefix")}{quote}{target}{quote}'
+        return tag[:src.start()] + new_src + tag[src.end():]
+
+    return IMG_TAG_RE.sub(replace_tag, content)
+
+
 def prepare_html_for_conversion(input_html, temp_dir, lang="zh-CN"):
     """Prepare HTML file for conversion with font styling"""
 
@@ -102,6 +152,8 @@ def prepare_html_for_conversion(input_html, temp_dir, lang="zh-CN"):
     try:
         with open(work_html, 'r', encoding='utf-8') as f:
             content = f.read()
+
+        content = _unwrap_svg_data_uri_images(content)
 
         # Add font styling CSS
         font_css = f"""
@@ -254,6 +306,27 @@ def convert_html_with_calibre(html_file, output_file, format_type, timeout=600, 
             "--pdf-mono-font-size", "12"
         ])
     
+    # Calibre writes the output file as it goes, so a failed conversion can
+    # leave a truncated artifact behind. Remember the previous state: on
+    # failure we remove the file only if this run touched it, otherwise the
+    # next build would "skip" the format as already up to date.
+    previous_state = None
+    if os.path.exists(output_file):
+        stat = os.stat(output_file)
+        previous_state = (stat.st_mtime_ns, stat.st_size)
+
+    def discard_partial_output():
+        if not os.path.exists(output_file):
+            return
+        stat = os.stat(output_file)
+        if previous_state is not None and (stat.st_mtime_ns, stat.st_size) == previous_state:
+            return
+        try:
+            os.remove(output_file)
+            print(f"Removed partial output left by the failed conversion: {output_file}")
+        except OSError as e:
+            print(f"Warning: could not remove partial output {output_file}: {e}")
+
     try:
         print(f"Starting conversion (timeout: {timeout}s)...")
         result = subprocess.run(cmd, capture_output=True, text=True,
@@ -269,13 +342,16 @@ def convert_html_with_calibre(html_file, output_file, format_type, timeout=600, 
                 return False
         else:
             print(f"ERROR: Calibre conversion failed: {result.stderr}")
+            discard_partial_output()
             return False
-            
+
     except subprocess.TimeoutExpired:
         print(f"ERROR: Conversion timed out after {timeout} seconds")
+        discard_partial_output()
         return False
     except Exception as e:
         print(f"ERROR: Conversion error: {e}")
+        discard_partial_output()
         return False
 
 def main():
