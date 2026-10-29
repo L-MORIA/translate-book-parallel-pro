@@ -157,6 +157,16 @@ class ResolveTitleTests(unittest.TestCase):
         config = {"input_file": r"C:\books\my book.epub"}
         self.assertEqual(merge_and_build._resolve_title(None, config), "my book")
 
+    def test_filename_fallback_understands_posix_and_forward_slash_paths(self):
+        for input_file in (
+            "/home/user/books/my book.epub",
+            r"C:/books/my book.epub",
+        ):
+            with self.subTest(input_file=input_file):
+                config = {"input_file": input_file}
+                self.assertEqual(merge_and_build._resolve_title(None, config),
+                                 "my book")
+
     def test_falls_back_to_a_generic_name(self):
         self.assertEqual(merge_and_build._resolve_title(None, {}), "Translated Book")
 

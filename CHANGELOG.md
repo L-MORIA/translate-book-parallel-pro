@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.15 — `_resolve_title()` understands Windows paths on Linux (found by CI) (2026-10-29)
+
+- **Fixed** `merge_and_build._resolve_title()` (v1.2.10): when no `--title` and no `original_title` exist, the fallback takes the stem of `config.input_file` with `os.path.basename()` — which does not split Windows-style `C:\books\x.epub` on Linux, so a CI run got the whole path as the book title (`ResolveTitleTests.test_falls_back_to_the_input_filename` failed under ubuntu-24.04). The path is now normalised over `\` and `/` before taking the stem; correct on both platforms
+- **Tests**: `test_filename_fallback_understands_posix_and_forward_slash_paths` pins the POSIX path and the `C:/...` forward-slash variants (396 tests)
+
 ## v1.2.14 — CI runners pinned to ubuntu-24.04 after the 26.04 migration broke setup (2026-10-29)
 
 - **Fixed** `.github/workflows/ci.yml`: `ubuntu-latest` migrated to Ubuntu 26.04 on 2026-10-19, and the pinned `actions/setup-python@v5.6.0` has no Python 3.9–3.13 builds for that image — every matrix `test` job died in "Set up Python" with *"The version '3.9' with architecture 'x64' was not found for Ubuntu 26.04"* (CI run 40849120702, also reproducible on the pre-T-02 workflow). This was a runner-infrastructure break, not a code regression: `lint` and `integration` passed — they don't need the missing Python versions

@@ -143,7 +143,10 @@ def _resolve_title(title_arg, config):
         return title
     input_file = config.get('input_file', '')
     if input_file:
-        return os.path.splitext(os.path.basename(input_file))[0]
+        # config.txt was written on the translating machine; its stored path
+        # may use the other platform's separator (CI runs the suite on Linux).
+        # Normalise both separators before taking the stem.
+        return os.path.splitext(os.path.basename(input_file.replace('\\', '/')))[0]
     return 'Translated Book'
 
 
