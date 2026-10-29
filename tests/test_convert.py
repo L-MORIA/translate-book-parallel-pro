@@ -1,6 +1,8 @@
 import contextlib
+import inspect
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,6 +14,30 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import convert  # noqa: E402
+
+
+class ChunkSizeDefaultTests(unittest.TestCase):
+    """The library defaults and the CLI default must be the same number."""
+
+    def test_library_defaults_match_the_cli_default(self):
+        self.assertEqual(convert.DEFAULT_CHUNK_SIZE, 15000)
+        for func in (
+            convert.merge_blocks_to_chunks,
+            convert.split_markdown_text,
+            convert.split_markdown_structured,
+        ):
+            default = inspect.signature(func).parameters["target_size"].default
+            self.assertEqual(default, convert.DEFAULT_CHUNK_SIZE, func.__name__)
+
+    def test_cli_help_advertises_the_same_default(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT_DIR / "convert.py"), "--help"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(f"(default: {convert.DEFAULT_CHUNK_SIZE})", result.stdout)
 
 
 class CleanCalibreMarkersTests(unittest.TestCase):

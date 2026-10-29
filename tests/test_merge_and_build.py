@@ -140,6 +140,27 @@ class GenerateFormatsReturnTests(unittest.TestCase):
         self.assertIs(ok, False)
 
 
+class ResolveTitleTests(unittest.TestCase):
+    """A file name must never overwrite the book's own metadata title."""
+
+    def test_explicit_title_wins(self):
+        self.assertEqual(
+            merge_and_build._resolve_title("Переведённое", {"original_title": "Original"}),
+            "Переведённое",
+        )
+
+    def test_metadata_title_beats_the_filename(self):
+        config = {"original_title": "Pride & Prejudice", "input_file": r"C:\books\pride.epub"}
+        self.assertEqual(merge_and_build._resolve_title(None, config), "Pride & Prejudice")
+
+    def test_falls_back_to_the_input_filename(self):
+        config = {"input_file": r"C:\books\my book.epub"}
+        self.assertEqual(merge_and_build._resolve_title(None, config), "my book")
+
+    def test_falls_back_to_a_generic_name(self):
+        self.assertEqual(merge_and_build._resolve_title(None, {}), "Translated Book")
+
+
 class CleanupIntermediateFilesTests(unittest.TestCase):
     """--cleanup must never silently destroy the only copy of the translation."""
 

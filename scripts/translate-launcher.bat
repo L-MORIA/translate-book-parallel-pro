@@ -4,7 +4,7 @@ title Translate Book Pro
 
 :: ============================================================
 :: Translate Book Parallel Pro — Launcher
-:: Supported: EPUB, PDF, DOCX, TXT
+:: Supported: EPUB, PDF, DOCX
 :: Output: EPUB + DOCX + PDF + HTML
 :: ============================================================
 
@@ -18,7 +18,7 @@ set "OUTPUT_ROOT=%REPO_DIR%\translations"
 cls
 echo.
 echo ============================================
-echo   translate-book-parallel-pro  v1.0
+echo   translate-book-parallel-pro
 echo   AI-powered book translation (Hermes)
 echo ============================================
 echo.
@@ -28,7 +28,7 @@ echo.
 set "INPUT_FILE=%1"
 if "%INPUT_FILE%"=="" (
     echo Opening file picker...
-    for /f "usebackq tokens=*" %%i in (`powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Books (EPUB,PDF,DOCX,TXT)|*.epub;*.pdf;*.docx;*.txt|EPUB files|*.epub|PDF files|*.pdf|DOCX files|*.docx|TXT files|*.txt|All files|*.*'; $f.Title = 'Select a book to translate'; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }"`) do set "INPUT_FILE=%%i"
+    for /f "usebackq tokens=*" %%i in (`powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Books (EPUB,PDF,DOCX)|*.epub;*.pdf;*.docx|EPUB files|*.epub|PDF files|*.pdf|DOCX files|*.docx|All files|*.*'; $f.Title = 'Select a book to translate'; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }"`) do set "INPUT_FILE=%%i"
     echo.
 )
 
@@ -48,10 +48,13 @@ set "EXT=%EXT:.=%"
 echo File: %INPUT_FILE%
 echo Format: %EXT%
 
-echo %EXT% | findstr /i "epub pdf docx txt" >nul
-if errorlevel 1 (
+set "SUPPORTED="
+if /i "%EXT%"=="epub" set "SUPPORTED=1"
+if /i "%EXT%"=="pdf" set "SUPPORTED=1"
+if /i "%EXT%"=="docx" set "SUPPORTED=1"
+if not defined SUPPORTED (
     echo Format .%EXT% not supported.
-    echo Supported: EPUB, PDF, DOCX, TXT
+    echo Supported: EPUB, PDF, DOCX
     pause
     exit /b 1
 )
@@ -85,7 +88,7 @@ echo.
 :: ─── Ensure dependencies ────────────────────────────────────
 echo Installing dependencies (pypandoc, beautifulsoup4)...
 python "%SCRIPTS_DIR%\setup.py" >nul 2>&1
-pip install pypandoc beautifulsoup4 >nul 2>&1
+python -m pip install pypandoc beautifulsoup4 >nul 2>&1
 echo Done.
 echo.
 
@@ -126,20 +129,26 @@ echo [2/2] Building output formats...
 echo.
 
 set "TEMP_DIR=%OUT_DIR%\%BOOK_NAME%_temp"
-python "%SCRIPTS_DIR%\merge_and_build.py" --temp-dir "%TEMP_DIR%" --title "%BOOK_NAME%" --cleanup
+
+:: No --title here: merge_and_build.py prefers original_title from config.txt
+:: (written by convert.py from the book metadata) and only falls back to the
+:: input filename when the book has no metadata title. Passing the filename
+:: here would overwrite the real title.
+python "%SCRIPTS_DIR%\merge_and_build.py" --temp-dir "%TEMP_DIR%" --cleanup
 if errorlevel 1 (
-    echo Build failed - translation may not be complete yet.
+    echo Build failed - see the messages above.
+    echo   - incomplete translation: some output_chunk*.md files are missing
+    echo   - or a format conversion failed ^(Calibre^)
     pause
     exit /b 1
 )
 
 :: ─── Move results ────────────────────────────────────────────
-if exist "%TEMP_DIR%\book.epub" (
-    move "%TEMP_DIR%\book.epub" "%OUT_DIR%\" >nul 2>&1
-    move "%TEMP_DIR%\book.docx" "%OUT_DIR%\" >nul 2>&1
-    move "%TEMP_DIR%\book.pdf"  "%OUT_DIR%\" >nul 2>&1
-    move "%TEMP_DIR%\book.html" "%OUT_DIR%\" >nul 2>&1
-)
+:: Move whatever was produced: a failed EPUB must not hide a good DOCX/PDF.
+move "%TEMP_DIR%\book.epub" "%OUT_DIR%\" >nul 2>&1
+move "%TEMP_DIR%\book.docx" "%OUT_DIR%\" >nul 2>&1
+move "%TEMP_DIR%\book.pdf"  "%OUT_DIR%\" >nul 2>&1
+move "%TEMP_DIR%\book.html" "%OUT_DIR%\" >nul 2>&1
 
 :: ─── Finish ──────────────────────────────────────────────────
 set "END_TIME=%TIME%"

@@ -19,6 +19,12 @@ import re
 from manifest import create_manifest, file_hash
 
 
+# Single source of truth for the chunk size: the CLI default and the library
+# defaults must agree, otherwise calling the functions directly (tests, other
+# scripts) silently produces a different chunk count than running convert.py.
+DEFAULT_CHUNK_SIZE = 15000
+
+
 def find_calibre_convert():
     """Find ebook-convert command from Calibre installation"""
     possible_paths = [
@@ -587,7 +593,7 @@ def parse_structural_blocks(content):
 HEADING_BREAK_FRACTION = 0.5
 
 
-def merge_blocks_to_chunks(blocks, target_size=6000):
+def merge_blocks_to_chunks(blocks, target_size=DEFAULT_CHUNK_SIZE):
     """Merge structural blocks into chunks respecting target_size.
 
     Headings are preferred split points, not mandatory ones: a heading only
@@ -703,7 +709,7 @@ def _force_split_block(text, target_size):
     return chunks
 
 
-def split_markdown_text(content, target_size=6000):
+def split_markdown_text(content, target_size=DEFAULT_CHUNK_SIZE):
     """Split markdown source text into a list of chunk texts (pure, no disk IO).
 
     Shared by split_markdown_structured() and by the reuse check in
@@ -713,7 +719,7 @@ def split_markdown_text(content, target_size=6000):
     return merge_blocks_to_chunks(blocks, target_size)
 
 
-def split_markdown_structured(md_file, temp_dir, target_size=6000):
+def split_markdown_structured(md_file, temp_dir, target_size=DEFAULT_CHUNK_SIZE):
     """Split markdown into structural chunks.
 
     Returns list of chunk filenames (e.g. ['chunk0001.md', ...]).
@@ -1019,7 +1025,7 @@ def main():
     parser.add_argument("input_file", help="Input file (PDF, DOCX, or EPUB)")
     parser.add_argument("-l", "--ilang", default="auto", help="Input language (default: auto)")
     parser.add_argument("--olang", default="zh", help="Output language (default: zh)")
-    parser.add_argument("--chunk-size", type=int, default=15000, help="Target chunk size in characters (default: 15000)")
+    parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE, help=f"Target chunk size in characters (default: {DEFAULT_CHUNK_SIZE})")
     parser.add_argument(
         "--temp-root",
         default=None,

@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.10 — Launcher, shortcut script and chunk-size defaults match the pipeline again (2026-10-28)
+
+- **Fixed** `scripts/translate-launcher.bat` (C-10): it advertised TXT support and offered `*.txt` in the file picker, but `convert.py` rejects `.txt` with exit 1; the format check now compares `.epub`/`.pdf`/`.docx` exactly instead of `findstr` over a free-text list. `pip install` became `python -m pip install` so the packages land in the interpreter that runs the pipeline. Dependencies are still installed before the conversion, but into the right environment
+- **Fixed** the launcher passing `--title "%BOOK_NAME%"`, which overwrote the book's metadata title with the file name. `merge_and_build.py` now resolves the title as `--title` → `original_title` from `config.txt` (written by `convert.py`) → input file name → `"Translated Book"`, and the launcher simply omits `--title`
+- **Fixed** the launcher moving results only when `book.epub` exists: a failed EPUB used to hide a good DOCX/PDF. Each format is moved independently, and the exit-1 message now says the build failed either because translations are missing or because a format conversion failed (not "translation may not be complete yet" for every failure)
+- **Fixed** the launcher banner claiming `v1.0` while the project is at 1.2.x; the banner no longer hardcodes a version
+- **Fixed** `scripts/create-desktop-shortcut.ps1` (C-11): `` `u{2705} `` needs PowerShell 6+ and prints literally under Windows PowerShell 5.1 (the usual interpreter for `.ps1`). Uses `[char]::ConvertFromUtf32(0x2705)` now; the description no longer claims TXT
+- **Fixed** `convert.py` (C-12): `merge_blocks_to_chunks()`, `split_markdown_text()` and `split_markdown_structured()` defaulted to `target_size=6000` while the CLI default is 15000, so calling them from Python produced 2.5× more chunks than the same book through the CLI. All of them and the CLI now share `DEFAULT_CHUNK_SIZE = 15000`
+- **Tests**: 337 → 352. `test_launcher_scripts.py` checks the `.bat`/`.ps1` against the pipeline (no TXT, `python -m pip`, no `--title` override, per-format moves, PowerShell 5 escape); `ChunkSizeDefaultTests` pins the library and CLI defaults to one constant; `ResolveTitleTests` pins the title precedence
+- **Verified**: the launcher rejects a `.txt` file with `Format .txt not supported. Supported: EPUB, PDF, DOCX` and exit 1; a build without `--title` on the sleepy-hollow baseline prints `Title: The Legend of Sleepy Hollow` from `config.txt`; `create-desktop-shortcut.ps1` parses cleanly under Windows PowerShell 5.1
+
 ## v1.2.9 — `--cleanup` no longer destroys the translations (2026-10-28)
 
 - **Fixed** `merge_and_build.py` (C-09): `--cleanup` deleted `chunk*.md` **and** `output_chunk*.md`, so after a successful build the book could not be rebuilt at all — `validate_for_merge` needs the output chunks, and changing the title, font, cover or export name then required translating the whole book again. `translate-launcher.bat` always passes `--cleanup`, so launcher users hit this on every build

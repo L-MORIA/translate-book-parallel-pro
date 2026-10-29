@@ -129,6 +129,24 @@ def cleanup_intermediate_files(temp_dir, remove_chunks=False):
 # Main
 # =============================================================================
 
+def _resolve_title(title_arg, config):
+    """Pick the book title: explicit --title, then the metadata title that
+    convert.py stored in config.txt, then the input file name.
+
+    The launcher used to pass the file name as --title, which overwrote the
+    real metadata title; that is why the metadata comes before the fallback.
+    """
+    if title_arg:
+        return title_arg
+    title = config.get('original_title')
+    if title:
+        return title
+    input_file = config.get('input_file', '')
+    if input_file:
+        return os.path.splitext(os.path.basename(input_file))[0]
+    return 'Translated Book'
+
+
 def main():
     parser = argparse.ArgumentParser(description='Merge translated pages and build final outputs')
     parser.add_argument('--temp-dir', required=True, help='Temp directory path')
@@ -171,7 +189,10 @@ def main():
     lang_code = args.lang or config.get('output_lang', 'zh')
     lang_cfg = get_lang_config(lang_code)
 
-    title = args.title or config.get('original_title', 'Translated Book')
+    # Title: explicit --title, then the book's own metadata title from
+    # config.txt (written by convert.py), then the input file name. Never
+    # overwrite a real metadata title with the file name.
+    title = _resolve_title(args.title, config)
     author = args.author or config.get('creator', 'Unknown Author')
 
     print("=== Merge and Build ===")
