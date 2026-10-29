@@ -1,5 +1,8 @@
 import base64
+import contextlib
 import inspect
+import io
+import os
 import sys
 import tempfile
 import unittest
@@ -188,6 +191,119 @@ class UnwrapSvgDataUriImagesTests(unittest.TestCase):
             content = Path(work_html).read_text(encoding="utf-8")
         self.assertIn('src="images/000000.jpg"', content)
         self.assertNotIn('data:image/svg', content)
+
+
+class PdfFontForLangTests(unittest.TestCase):
+    """_get_pdf_font_for_lang() — the PDF embed font per output language,
+    the usual place where CJK output turns into boxes with tofu squares."""
+
+    def test_cjk_languages_get_pdf_native_fonts(self):
+        for lang, font in (
+            ("zh", "FangSong"),
+            ("zh-hans", "FangSong"),
+            ("ja", "Hiragino Mincho ProN"),
+            ("ko", "Nanum Myeongjo"),
+        ):
+            with self.subTest(lang=lang):
+                self.assertEqual(calibre_html_publish._get_pdf_font_for_lang(lang),
+                                 font, lang)
+
+    def test_other_languages_get_the_western_default(self):
+        for lang in ("en", "ru", "", "sr-Cyrl"):
+            with self.subTest(lang=lang):
+                self.assertEqual(calibre_html_publish._get_pdf_font_for_lang(lang),
+                                 "Georgia", lang)
+
+    def test_language_codes_are_matched_case_insensitively(self):
+        self.assertEqual(calibre_html_publish._get_pdf_font_for_lang("ZH"), "FangSong")
+        self.assertEqual(calibre_html_publish._get_pdf_font_for_lang("Ru"), "Georgia")
+
+
+class CopyImagesIfNeededTests(unittest.TestCase):
+    """copy_images_if_needed() — harvests Calibre's images next to the HTML
+    into the temp dir that feeds the DOCX/EPUB/PDF conversions."""
+
+    def _stage(self):
+        tmp = tempfile.TemporaryDirectory()
+        base = Path(tmp.name)
+        source = base / "htmlz-extract"
+        source.mkdir()
+        work_html = source / "work.html"
+        work_html.write_text("<html><body>x</body></html>", encoding="utf-8")
+        for name, files in (
+            ("images", (("cover.jpg", b"a"), ("ill.png", b"b"))),
+            ("media", (("000001.jpg", b"c"),)),
+            ("pics", (("screenshot.svg", b"d"),)),
+        ):
+            (source / name).mkdir()
+            for file_name, payload in files:
+                (source / name / file_name).write_bytes(payload)
+        (source / "loose.jpg").write_bytes(b"e")
+        (source / "notes.txt").write_bytes(b"not an image")
+        temp_dir = base / "temp"
+        temp_dir.mkdir()
+        return tmp, work_html, temp_dir
+
+    def test_copies_every_image_dir_and_loose_files(self):
+        tmp, work_html, temp_dir = self._stage()
+        with tmp:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                total = calibre_html_publish.copy_images_if_needed(str(work_html),
+                                                                  str(temp_dir))
+                copied = {
+                    name: Path(temp_dir, *path).is_file()
+                    for name, path in {
+                        "cover.jpg": ("images", "cover.jpg"),
+                        "ill.png": ("images", "ill.png"),
+                        "000001.jpg": ("media", "000001.jpg"),
+                        "screenshot.svg": ("pics", "screenshot.svg"),
+                        "loose.jpg": ("loose.jpg",),
+                    }.items()
+                }
+                summaries = out.getvalue()
+
+        self.assertEqual(total, 5)
+        self.assertTrue(all(copied.values()), copied)
+        self.assertIn("Total images copied: 5", summaries)
+
+    def test_counts_only_image_extensions(self):
+        tmp, work_html, temp_dir = self._stage()
+        with tmp:
+            Path(work_html.parent, "images", "data.txt").write_bytes(b"junk")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                total = calibre_html_publish.copy_images_if_needed(str(work_html),
+                                                                  str(temp_dir))
+
+        # copytree carries the whole directory; extension filtering applies to
+        # the counters ("Copied 2 images from images/") and the return value,
+        # not to which files are moved.
+        self.assertEqual(total, 5)
+        self.assertIn("Copied 2 images from images/", out.getvalue())
+        self.assertIn("Total images copied: 5", out.getvalue())
+
+    def test_notes_are_never_copied(self):
+        tmp, work_html, temp_dir = self._stage()
+        with tmp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                calibre_html_publish.copy_images_if_needed(str(work_html), str(temp_dir))
+                notes_copied = Path(temp_dir, "notes.txt").exists()
+                html_copied = Path(temp_dir, "work.html").exists()
+
+        self.assertFalse(notes_copied)
+        self.assertFalse(html_copied)
+
+    def test_no_images_reports_zero(self):
+        with tempfile.TemporaryDirectory() as temp:
+            work_html = Path(temp, "work.html")
+            work_html.write_text("<p>x</p>", encoding="utf-8")
+            temp_dir = Path(temp, "temp")
+            temp_dir.mkdir()
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                total = calibre_html_publish.copy_images_if_needed(str(work_html),
+                                                                  str(temp_dir))
+
+        self.assertEqual(total, 0)
+        self.assertIn("No images found", out.getvalue())
 
 
 if __name__ == "__main__":

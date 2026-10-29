@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.13 — Test coverage sweep for the audit §7 gaps (2026-10-29)
+
+- **Tests** (T-01): the audit counted 72 of 129 functions absent from the suite and listed the important ones; this batch covers the named paths, adding 43 tests (352 → 395), all mocking the external tools — no Calibre/pandoc needed:
+  - `convert` — `extract_htmlz()` (index.html + images dir pickup, fallback to any `.html/.htm`, corrupt zip, zip without markup), `extract_metadata_from_htmlz()` (title/creator/publisher/language from `metadata.opf`, stripped title, missing/corrupt OPF → `{}`), `convert_to_htmlz()` (Calibre success/failure/timeout/unexpected error incl. the argv passed), `convert_html_to_markdown()` (BOM/nbsp/calibre-marker cleanup of pandoc output, "file was not created", the `pip install pypandoc` hint when pypandoc is absent, generic failure), and the wrong-book guard `_load_source_fingerprint()`/`_has_reusable_source_cache()`/`check_source_cache()` adopt-vs-mismatch — including that renaming the source file does NOT invalidate the cache (only bytes do) and `_abort_on_source_cache_mismatch()` exits 1 on mismatch and only warns on adopt
+  - `run_state` — `save_run_state()` atomicity (tmp+`os.replace`, a failed dump leaves the previous state and no `.run_state.*` litter), `build_chunk_record()` record shape vs `file_hash`, entity selection with and without `glossary.json`, and every error path (unknown id, missing source/output, empty, blank, non-UTF-8 output)
+  - `_mab_html` — `convert_with_pandoc()`: exact argv (`--standalone`, `title=`/`lang=` metadata pairs, `markdown+smart+east_asian_line_breaks`, `html5`), a title with `&`/quotes survives verbatim (argv, no shell), `CalledProcessError` → False
+  - `calibre_html_publish` — `_get_pdf_font_for_lang()` CJK fonts and case-insensitive prefix matching; `copy_images_if_needed()` harvests `images/` + `media/` + `pics/` + loose files, image-extension-filtered counters, never copies `notes.txt` as images, zero-images case
+- **Verified**: full suite 395 OK; `ruff check .` stays green
+
 ## v1.2.12 — CI: pinned dependencies, working cache key, ruff gate, Python 3.14 (2026-10-29)
 
 - **Added** `requirements.txt` (T-02): `pypandoc==1.17` and `beautifulsoup4==4.15.0`, the versions the repository is actually verified with. `markdown` is documented as an optional accelerator (the tested path is the `_mab_html.py` regex fallback) and deliberately not a dependency

@@ -1,9 +1,12 @@
 import contextlib
 import io
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -349,6 +352,73 @@ class HtmlBuildStampTests(unittest.TestCase):
             self.assertTrue(ok)
             self.assertIn("output_md_sha256", out)
             self.assertIn("Completely different body text", web_html)
+
+
+class ConvertWithPandocTests(unittest.TestCase):
+    """convert_with_pandoc() — the primary MD→HTML converter. Unit CI has no
+    pandoc binary, so the subprocess call is mocked; the command construction
+    is what matters."""
+
+    def _stage(self):
+        tmp = tempfile.TemporaryDirectory()
+        md_file = os.path.join(tmp.name, "output.md")
+        html_file = os.path.join(tmp.name, "book.html")
+        Path(md_file).write_text("Body text.\n", encoding="utf-8")
+        return tmp, md_file, html_file
+
+    def test_builds_the_expected_pandoc_argv(self):
+        tmp, md_file, html_file = self._stage()
+        with tmp:
+            with mock.patch("_mab_html.subprocess.run", return_value=mock.Mock()) as run, \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = _mab_html.convert_with_pandoc(md_file, html_file, "My Title", "ru")
+
+        self.assertTrue(ok)
+        self.assertIn("Converted with pandoc", out.getvalue())
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[0], "pandoc")
+        self.assertEqual(cmd[1], md_file)
+        self.assertEqual(cmd[cmd.index("-o") + 1], html_file)
+        self.assertIn("--standalone", cmd)
+        self.assertEqual(cmd[cmd.index("--metadata") + 1], "title=My Title")
+        self.assertIn("lang=ru", cmd)
+        self.assertEqual(cmd[cmd.index("--from") + 1],
+                         "markdown+smart+east_asian_line_breaks")
+        self.assertEqual(cmd[cmd.index("--to") + 1], "html5")
+        self.assertIs(run.call_args.kwargs["check"], True)
+
+    def test_lang_pair_is_a_single_unit_index(self):
+        tmp, md_file, html_file = self._stage()
+        with tmp:
+            with mock.patch("_mab_html.subprocess.run", return_value=mock.Mock()) as run:
+                _mab_html.convert_with_pandoc(md_file, html_file, "T", "ja")
+
+        cmd = run.call_args.args[0]
+        pairs = {cmd[i + 1] for i, item in enumerate(cmd) if item == "--metadata"}
+        self.assertEqual(pairs, {"title=T", "lang=ja"})
+
+    def test_title_may_contain_shell_metacharacters(self):
+        title = 'Nursery & «Rhyme» "Special" Edition'
+        tmp, md_file, html_file = self._stage()
+        with tmp:
+            with mock.patch("_mab_html.subprocess.run", return_value=mock.Mock()) as run:
+                _mab_html.convert_with_pandoc(md_file, html_file, title, "ru")
+
+        cmd = run.call_args.args[0]
+        # argv passing keeps the title verbatim: no shell parsing of & or quotes
+        self.assertEqual(cmd[cmd.index("--metadata") + 1], f"title={title}")
+
+    def test_pandoc_failure_returns_false(self):
+        tmp, md_file, html_file = self._stage()
+        with tmp:
+            with mock.patch(
+                "_mab_html.subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, "pandoc", None, "boom"),
+            ), contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = _mab_html.convert_with_pandoc(md_file, html_file, "T", "ru")
+
+        self.assertFalse(ok)
+        self.assertIn("Pandoc conversion failed: boom", out.getvalue())
 
 
 if __name__ == "__main__":

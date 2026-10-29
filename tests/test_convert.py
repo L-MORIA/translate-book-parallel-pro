@@ -1,12 +1,16 @@
 import contextlib
 import inspect
 import io
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -848,6 +852,380 @@ class ChunkSetReuseTests(unittest.TestCase):
 
             self.assertEqual(count, 0)
             self.assertIn("chunknotes.md is not a chunkNNNN.md file", out)
+
+
+_HTMLZ_OPF = """<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+         version="2.0">
+  <metadata>
+    <dc:title>  Alice in Wonder  </dc:title>
+    <dc:creator>Lewis Carroll</dc:creator>
+    <dc:publisher>Standard Ebooks</dc:publisher>
+    <dc:language>en</dc:language>
+  </metadata>
+</package>
+"""
+
+
+class HtmlzExtractionTests(unittest.TestCase):
+    """extract_htmlz()/extract_metadata_from_htmlz() — the pure zip/XML part
+    of the Calibre conversion path that unit CI never exercised."""
+
+    @staticmethod
+    def _write_zip(path, entries):
+        with zipfile.ZipFile(path, "w") as zf:
+            for name, payload in entries.items():
+                zf.writestr(name, payload)
+
+    def _staged_temp(self):
+        tmp = tempfile.TemporaryDirectory()
+        htmlz = os.path.join(tmp.name, "book.htmlz")
+        extract_dir = os.path.join(tmp.name, "extract")
+        os.makedirs(extract_dir)
+        return tmp, htmlz, extract_dir
+
+    def test_finds_index_html_and_images_dir(self):
+        tmp, htmlz, extract_dir = self._staged_temp()
+        with tmp:
+            self._write_zip(htmlz, {
+                "index.html": "<html><body>Hi</body></html>",
+                "metadata.opf": _HTMLZ_OPF,
+                "images/pic.jpg": "jpeg-bytes",
+            })
+            html_file, images_dir = convert.extract_htmlz(htmlz, extract_dir)
+
+            self.assertTrue(os.path.isfile(os.path.join(extract_dir, "images", "pic.jpg")))
+
+        self.assertEqual(html_file, os.path.join(extract_dir, "index.html"))
+        self.assertEqual(images_dir, os.path.join(extract_dir, "images"))
+
+    def test_falls_back_to_any_html_file_when_index_missing(self):
+        tmp, htmlz, extract_dir = self._staged_temp()
+        with tmp:
+            self._write_zip(htmlz, {
+                "chapter.htm": "<html><body>Hi</body></html>",
+            })
+            html_file, images_dir = convert.extract_htmlz(htmlz, extract_dir)
+
+        self.assertEqual(html_file, os.path.join(extract_dir, "chapter.htm"))
+        self.assertIsNone(images_dir)
+
+    def test_corrupt_zip_reports_error_and_returns_nones(self):
+        tmp, htmlz, extract_dir = self._staged_temp()
+        with tmp:
+            with open(htmlz, "wb") as f:
+                f.write(b"this is not a zip archive")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                html_file, images_dir = convert.extract_htmlz(htmlz, extract_dir)
+
+        self.assertIsNone(html_file)
+        self.assertIsNone(images_dir)
+        self.assertIn("Error extracting HTMLZ", out.getvalue())
+
+    def test_zip_without_any_html_returns_nones(self):
+        tmp, htmlz, extract_dir = self._staged_temp()
+        with tmp:
+            self._write_zip(htmlz, {"notes.txt": "no markup here"})
+            html_file, images_dir = convert.extract_htmlz(htmlz, extract_dir)
+
+        self.assertIsNone(html_file)
+        self.assertIsNone(images_dir)
+
+    def test_metadata_reads_the_opf_fields(self):
+        tmp, _, extract_dir = self._staged_temp()
+        with tmp:
+            Path(extract_dir, "metadata.opf").write_text(_HTMLZ_OPF, encoding="utf-8")
+            metadata = convert.extract_metadata_from_htmlz(extract_dir)
+
+        # The title must come back stripped: it is later reused as the book title.
+        self.assertEqual(metadata["title"], "Alice in Wonder")
+        self.assertEqual(metadata["creator"], "Lewis Carroll")
+        self.assertEqual(metadata["publisher"], "Standard Ebooks")
+        self.assertEqual(metadata["language"], "en")
+
+    def test_metadata_without_opf_file_returns_empty(self):
+        tmp, _, extract_dir = self._staged_temp()
+        with tmp:
+            self.assertEqual(convert.extract_metadata_from_htmlz(extract_dir), {})
+
+    def test_metadata_corrupt_opf_returns_empty(self):
+        tmp, _, extract_dir = self._staged_temp()
+        with tmp:
+            Path(extract_dir, "metadata.opf").write_text("<<< not xml", encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                metadata = convert.extract_metadata_from_htmlz(extract_dir)
+
+        self.assertEqual(metadata, {})
+        self.assertIn("Warning", out.getvalue())
+
+
+class ConvertToHtmlzTests(unittest.TestCase):
+    """convert_to_htmlz() shells out to Calibre; gate the outcomes with mocks."""
+
+    def _staged(self):
+        tmp = tempfile.TemporaryDirectory()
+        input_file = os.path.join(tmp.name, "book.epub")
+        htmlz = os.path.join(tmp.name, "book.htmlz")
+        return tmp, input_file, htmlz
+
+    def test_success_reports_size_and_passes_calibre_the_files(self):
+        tmp, input_file, htmlz = self._staged()
+        with tmp:
+            Path(input_file).write_bytes(b"book")
+            Path(htmlz).write_bytes(b"result")
+            with mock.patch(
+                "convert.subprocess.run",
+                return_value=SimpleNamespace(returncode=0),
+            ) as run, contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = convert.convert_to_htmlz(input_file, htmlz, "ebook-convert")
+
+        self.assertTrue(ok)
+        self.assertEqual(run.call_args.args[0], ["ebook-convert", input_file, htmlz])
+        self.assertIn("HTMLZ conversion successful", out.getvalue())
+
+    def test_nonzero_exit_reports_stderr_and_returns_false(self):
+        tmp, input_file, htmlz = self._staged()
+        with tmp:
+            with mock.patch(
+                "convert.subprocess.run",
+                return_value=SimpleNamespace(returncode=1, stderr="calibre blew up"),
+            ) as run, contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = convert.convert_to_htmlz(input_file, htmlz, "ebook-convert")
+
+        self.assertFalse(ok)
+        run.assert_called_once()
+        self.assertIn("HTMLZ conversion failed: calibre blew up", out.getvalue())
+
+    def test_timeout_returns_false(self):
+        tmp, input_file, htmlz = self._staged()
+        with tmp:
+            with mock.patch(
+                "convert.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="ebook-convert", timeout=600),
+            ), contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = convert.convert_to_htmlz(input_file, htmlz, "ebook-convert")
+
+        self.assertFalse(ok)
+        self.assertIn("HTMLZ conversion timed out", out.getvalue())
+
+    def test_unexpected_failure_returns_false(self):
+        tmp, input_file, htmlz = self._staged()
+        with tmp:
+            with mock.patch(
+                "convert.subprocess.run",
+                side_effect=OSError("No such file or directory"),
+            ), contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = convert.convert_to_htmlz(input_file, htmlz, "ebook-convert")
+
+        self.assertFalse(ok)
+        self.assertIn("HTMLZ conversion error:", out.getvalue())
+
+
+class ConvertHtmlToMarkdownTests(unittest.TestCase):
+    """convert_html_to_markdown() — pypandoc call plus the BOM/nbsp/marker
+    cleanup of the produced markdown."""
+
+    PANDOC_MD = "﻿Hello\u00a0World{.calibre3} (#calibre_link-1)\n"
+
+    def _staged(self):
+        tmp = tempfile.TemporaryDirectory()
+        html_file = os.path.join(tmp.name, "work.html")
+        md_file = os.path.join(tmp.name, "input.md")
+        Path(html_file).write_text("<html><body>x</body></html>", encoding="utf-8")
+        return tmp, html_file, md_file
+
+    def test_convert_success_cleans_generated_markdown(self):
+        tmp, html_file, md_file = self._staged()
+        with tmp:
+            def fake_convert_file(html, fmt, outputfile=None, extra_args=None):
+                self.assertEqual(fmt, "markdown")
+                self.assertEqual(extra_args, ["--wrap=none"])
+                Path(outputfile).write_text(self.PANDOC_MD, encoding="utf-8")
+
+            with mock.patch("pypandoc.convert_file", side_effect=fake_convert_file) as run, \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = convert.convert_html_to_markdown(html_file, md_file)
+
+            content = Path(md_file).read_text(encoding="utf-8")
+
+        self.assertTrue(ok)
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0], html_file)
+        self.assertIn("Markdown conversion successful", out.getvalue())
+        self.assertNotIn("﻿", content)
+        self.assertNotIn("\u00a0", content)
+        self.assertNotIn(".calibre", content)
+        self.assertIn("Hello World", content)
+
+    def test_no_output_file_returns_false(self):
+        tmp, html_file, md_file = self._staged()
+        with tmp:
+            with mock.patch("pypandoc.convert_file"), \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = convert.convert_html_to_markdown(html_file, md_file)
+
+        self.assertFalse(ok)
+        self.assertIn("Markdown file was not created", out.getvalue())
+
+    def test_missing_pypandoc_points_at_pip_install(self):
+        tmp, html_file, md_file = self._staged()
+        with tmp:
+            with mock.patch.dict(sys.modules, {"pypandoc": None}), \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = convert.convert_html_to_markdown(html_file, md_file)
+
+        self.assertFalse(ok)
+        self.assertIn("pypandoc not found. Install with: pip install pypandoc",
+                      out.getvalue())
+        self.assertFalse(os.path.exists(md_file))
+
+    def test_generic_failure_reports_reason_and_returns_false(self):
+        tmp, html_file, md_file = self._staged()
+        with tmp:
+            with mock.patch("pypandoc.convert_file",
+                            side_effect=OSError("disk full")), \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                ok = convert.convert_html_to_markdown(html_file, md_file)
+
+        self.assertFalse(ok)
+        self.assertIn("HTML to Markdown conversion failed:", out.getvalue())
+
+
+class SourceFingerprintCacheTests(unittest.TestCase):
+    """The wrong-book protection: fingerprint load/store, reusable-cache
+    detection, adopt/mismatch decisions and the abort helper."""
+
+    def _temp_dir(self):
+        tmp = tempfile.TemporaryDirectory()
+        return tmp, Path(tmp.name)
+
+    def _book(self, temp_dir, name="book.epub", payload=b"book-bytes-v1"):
+        book = temp_dir / name
+        book.write_bytes(payload)
+        return book
+
+    def test_write_then_load_roundtrip(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            fingerprint = convert.source_fingerprint(self._book(temp_dir))
+            convert._write_source_fingerprint(str(temp_dir), fingerprint)
+            self.assertEqual(convert._load_source_fingerprint(str(temp_dir)),
+                             fingerprint)
+
+    def test_load_without_fingerprint_file_returns_none(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            self.assertIsNone(convert._load_source_fingerprint(str(temp_dir)))
+
+    def test_load_corrupt_fingerprint_returns_none(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            (temp_dir / "source_fingerprint.json").write_text("{not json", encoding="utf-8")
+            self.assertIsNone(convert._load_source_fingerprint(str(temp_dir)))
+
+    def test_reusable_cache_detection(self):
+        for name, reusable in (
+            ("input.html", True),
+            ("manifest.json", True),
+            ("input.md", True),
+            ("chunk0003.md", True),
+            ("output_chunk0001.md", True),
+            ("notes.txt", False),
+        ):
+            with self.subTest(name=name):
+                tmp, temp_dir = self._temp_dir()
+                with tmp:
+                    (temp_dir / name).write_text("x", encoding="utf-8")
+                    self.assertEqual(convert._has_reusable_source_cache(str(temp_dir)),
+                                     reusable, name)
+
+    def test_nonexistent_directory_is_not_reusable(self):
+        tmp = tempfile.TemporaryDirectory()
+        with tmp:
+            missing = os.path.join(tmp.name, "does_not_exist_temp")
+            self.assertFalse(convert._has_reusable_source_cache(missing))
+
+    def test_fresh_directory_needs_no_adopt_or_mismatch(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            status, message = convert.check_source_cache(
+                str(temp_dir), convert.source_fingerprint(self._book(temp_dir)))
+
+        self.assertEqual((status, message), (None, None))
+
+    def test_matching_fingerprint_passes_check(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            book = self._book(temp_dir)
+            (temp_dir / "input.md").write_text("converted", encoding="utf-8")
+            convert._write_source_fingerprint(str(temp_dir),
+                                              convert.source_fingerprint(book))
+            status, _ = convert.check_source_cache(str(temp_dir),
+                                                   convert.source_fingerprint(book))
+
+        self.assertEqual(status, None)
+
+    def test_renaming_the_source_does_not_invalidate_the_cache(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            book = self._book(temp_dir)
+            (temp_dir / "input.md").write_text("converted", encoding="utf-8")
+            convert._write_source_fingerprint(str(temp_dir),
+                                              convert.source_fingerprint(book))
+            renamed = temp_dir / "renamed.epub"
+            os.rename(book, renamed)
+            status, _ = convert.check_source_cache(str(temp_dir),
+                                                   convert.source_fingerprint(str(renamed)))
+
+        self.assertEqual(status, None)
+
+    def test_changed_source_bytes_are_a_mismatch(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            book = self._book(temp_dir)
+            (temp_dir / "input.md").write_text("converted", encoding="utf-8")
+            convert._write_source_fingerprint(str(temp_dir),
+                                              convert.source_fingerprint(book))
+            book.write_bytes(b"a different book entirely")
+            status, message = convert.check_source_cache(
+                str(temp_dir), convert.source_fingerprint(book))
+
+        self.assertEqual(status, "mismatch")
+        self.assertIn("different source bytes", message)
+        self.assertIn("would translate the wrong book", message)
+
+    def test_cache_without_fingerprint_is_adopted(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            # Pre-upgrade temp dir: artifacts exist, fingerprint does not.
+            (temp_dir / "input.html").write_text("<html/>", encoding="utf-8")
+            status, _ = convert.check_source_cache(
+                str(temp_dir), convert.source_fingerprint(self._book(temp_dir)))
+
+        self.assertEqual(status, "adopt")
+
+    def test_mismatch_status_aborts_with_exit_1(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                with self.assertRaises(SystemExit) as cm:
+                    convert._abort_on_source_cache_mismatch(
+                        "mismatch", "temp dir stale", str(temp_dir))
+
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("Error: temp dir stale", out.getvalue())
+        self.assertIn(f"Delete {temp_dir}", out.getvalue())
+
+    def test_adopt_status_prints_warning_without_exit(self):
+        tmp, temp_dir = self._temp_dir()
+        with tmp:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                convert._abort_on_source_cache_mismatch(
+                    "adopt", "older cache adopted", str(temp_dir))
+
+        self.assertIn("Warning: older cache adopted", out.getvalue())
+        self.assertEqual(out.getvalue().count("Warning"), 1)
 
 
 if __name__ == "__main__":
