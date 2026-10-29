@@ -1,0 +1,15 @@
+# Runtime dependencies of translate-book-parallel (Python side).
+#
+# Everything heavy — EPUB/PDF/DOCX conversion and format generation — happens
+# in external tools: Calibre's `ebook-convert` and `pandoc`. Those are not pip
+# packages; `scripts/setup.py` verifies them.
+#
+# Pinned exactly so CI runs, the Windows launcher and local setups install the
+# same versions the tests were verified against (audit T-02).
+pypandoc==1.17
+beautifulsoup4==4.15.0
+
+# Optional, NOT required: when the `markdown` package is installed,
+# _mab_html.py uses it as the middle converter stage (pandoc -> python-markdown
+# -> regex). Without it the tested regex fallback runs — the repository is
+# verified with it absent. Install manually if you want that stage.

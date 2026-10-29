@@ -86,9 +86,9 @@ echo Output: %OUT_DIR%
 echo.
 
 :: ─── Ensure dependencies ────────────────────────────────────
-echo Installing dependencies (pypandoc, beautifulsoup4)...
+echo Installing pinned dependencies (requirements.txt)...
 python "%SCRIPTS_DIR%\setup.py" >nul 2>&1
-python -m pip install pypandoc beautifulsoup4 >nul 2>&1
+python -m pip install -r "%REPO_DIR%\requirements.txt" >nul 2>&1
 echo Done.
 echo.
 

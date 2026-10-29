@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.12 — CI: pinned dependencies, working cache key, ruff gate, Python 3.14 (2026-10-29)
+
+- **Added** `requirements.txt` (T-02): `pypandoc==1.17` and `beautifulsoup4==4.15.0`, the versions the repository is actually verified with. `markdown` is documented as an optional accelerator (the tested path is the `_mab_html.py` regex fallback) and deliberately not a dependency
+- **Fixed** `.github/workflows/ci.yml` (T-02): `cache-dependency-path` pointed at `scripts/setup.py`, which contains no dependency list — the pip cache could never be invalidated by a dependency change. Both jobs now key on `requirements.txt` and install from it instead of unpinned `pip install pypandoc beautifulsoup4`
+- **Added** a `lint` job with `ruff==0.16.4` and a scoped `ruff.toml`: correctness-only checks (`E9` syntax errors, `F63` print-star, `F7` annotated-name syntax, `F82` undefined names) that unit tests can miss. Style rules stay out of scope — the codebase carries ~148 style remarks by design (audit §8.3); verified locally that the gate passes on the current tree
+- **Added** Python 3.14 to the test matrix: the supported toolchain (scripts/setup.py) runs 3.14 locally, but CI never tested it
+- **Fixed** `scripts/translate-launcher.bat` installing unpinned `pypandoc beautifulsoup4`; it now installs `-r %REPO_DIR%\requirements.txt`, so the launcher, CI and local docs share one dependency set
+- **Verified**: `ruff check .` passes (exit 0); `pip install --dry-run -r requirements.txt` resolves; workflow YAML parses (3 jobs: lint, test, integration); suite stays 352 OK
+
 ## v1.2.11 — Documentation matches the pipeline: chunk size, formats, baselines, batch semantics (2026-10-28)
 
 - **Fixed** `ARCHITECTURE.md` (D-01): the diagram and Phase-4 text claimed chunks of ~6000 chars — the v1.1 default; the actual default is 15000 (`--chunk-size`), now stated in both places. "The same translated chunks feed **five** output formats" listed only four; it now says four and explains that `book_doc.html` is the pandoc intermediate Calibre renders into DOCX/EPUB/PDF, and that `merge_and_build.py` exits non-zero if any format fails. "Adding a new input format requires zero pipeline changes" was also false: the extension allowlist in `convert.py` (`['.pdf', '.docx', '.epub']`) is a real one-line change (and the example name `leanbook-convert` was a typo for `ebook-convert`)

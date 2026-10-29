@@ -1,0 +1,16 @@
+# Ruff gate wired into CI in v1.2.12 (audit T-02).
+#
+# Scoped to correctness-only checks. The codebase carries style remarks by
+# design (the audit counted ~148); this gate is deliberately not a style
+# cleanup and must not block work with formatting noise.
+# If a rule below ever fires on real code, that is a bug worth blocking on:
+#   E9  = Python syntax errors
+#   F63 = invalid print-star usage
+#   F7  = syntax error in forward annotation
+#   F82 = undefined names (unit tests and the smoke gate miss these otherwise)
+target-version = "py39"
+line-length = 120
+respect-gitignore = true
+
+[lint]
+select = ["E9", "F63", "F7", "F82"]
