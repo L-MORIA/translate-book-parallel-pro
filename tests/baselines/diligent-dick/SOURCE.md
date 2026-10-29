@@ -4,8 +4,8 @@ Opt-in alias-stress baseline — exercises the `merge_meta` contested-variant an
 
 - File: `diligent-dick.epub`
 - Source: Project Gutenberg #71493 *Diligent Dick; or, The Young Farmer* (`epub3.images`)
-- Why this baseline: the protagonist appears as `Dick` / `Richard` / `Stuart` (with `Mr. Stuart` ambiguating father vs. son) and all three variants co-occur across ~9 consecutive chunks (chunks 30/33/36/38/40/42/48/50/53/54 in a fresh convert). Single-chunk Brom-style aliases — which Sleepy Hollow only provides intra-chunk — appear here cross-batch, which is exactly what the recent `merge_meta` "Surface ALL competing proposals" / "Surface ALL alias candidates" fixes are meant to protect.
-- Cost note: ~57 chunks (≈1.5× `standard-alice`), and ~30 of those are tiny heading- or image-only chunks created by the chunker's heading-boundary preference on this book's many short Sunday-school chapters. Real story content is ~27 chunks. Treat the high chunk count as expected, not a bug.
+- Why this baseline: the protagonist appears as `Dick` / `Richard` / `Stuart` (with `Mr. Stuart` ambiguating father vs. son), and the three variants co-occur under sustained cross-chunk pressure. With the current chunker (v1.2.3+) Dick and Richard share chunks 1–6 of 8 at the default size (measured 2026-10-28); under the historical 6000-config they shared chunks 2–12 of 16. The alias pressure is therefore almost continuous rather than confined to one batch — exactly what the `merge_meta` "Surface ALL competing proposals" / "Surface ALL alias candidates" fixes are meant to protect.
+- Cost note: 8 chunks at the default size, 16 at `--chunk-size 6000`; real story content spreads over all of them. (Historical: the v1.2.0 chunker cut this book's many short Sunday-school chapters into ~57 pieces, ~30 of them tiny heading- or image-only chunks; the v1.2.3 heading-boundary change removed that. Treat modern chunk counts as measured, not `~57`.)
 - Image coverage: 5 inline images (`image001`–`image005`); modest, do not rely on this baseline for image-path coverage.
 
 Run from `tests/.artifacts/` so generated files stay out of the repo root:
@@ -28,16 +28,22 @@ See `tests/baselines/README.md` for the three-tier convention.
 
 None — no `tests/.artifacts/diligent-dick_temp/` exists yet.
 
+*Conversion-only measurement (2026-10-28, no translation run): this input
+converts to **8 chunks** at the current default (`--chunk-size 15000`) and
+**16 chunks** at `--chunk-size 6000`. The v1.2.3 chunker dropped the
+heading-boundary preference that used to cut this book into ~57 pieces, so a
+default run no longer matches the historical count below.*
+
 ### Expected target (unverified — needs first full pipeline run)
 
-- `manifest.chunk_count` is approximately 57 (this `SOURCE.md` says `~57 chunks (≈1.5× standard-alice)` above, with the heading-boundary explanation for why so many are tiny). First run records the exact value; subsequent runs assert equality against the recorded value. Variance of a few chunks is estimation drift, not regression.
+- `manifest.chunk_count` is 8 at the default size (16 at `--chunk-size 6000`), per the 2026-10-28 conversion-only measurement above; if a later pipeline version changes the split, the first run records the new exact value and this line gets re-recorded. Variance introduced by a chunker change is not a regression, but it must be re-recorded.
 - All `chunk*.md` and matching `output_chunk*.md` exist; count matches `manifest.chunk_count`
 - 5 inline images preserved (`image001`–`image005`, source-file property — exact)
 - All 4 final formats generated: `book.html`, `book.docx`, `book.epub`, `book.pdf`
 - **Primary alias assertion**: `Dick` and `Richard` resolve to a *single* glossary entity, both forms present in `aliases`. (Unambiguous nickname relationship.)
 - **Critical ambiguity flag** — `Stuart` / `Mr. Stuart` (father vs. son): the disambiguation must surface in `merge_meta prepare-merge` output as **any** decision item (any `kind` — `alias`, `alias_or_new_entity`, `conflicting_new_entity_proposals`, `new_entity_existing_alias`, or `existing_entity_conflict` — whichever fires depends on run state). The non-silent criterion is "main agent gets to judge", regardless of decision kind. It must **NOT** be silently merged into `Dick`; silent merge = loss of evidence = regression.
   - Do **NOT** assert it must appear in the per-chunk meta `conflicts` array; that array is specifically for "injected canonical field vs observed-better value" comparisons (see `scripts/meta.py:21-23`), not general entity ambiguity.
-- Once the protagonist has been seen in the first two co-occurrence chunks (chunks 30 and 33 per the documented evidence above — *not* "batch 2", which lands on chunks 9–16 at default concurrency and contains no protagonist), the entity must reach `confidence != "low"`. The recent `merge_meta` "Surface ALL competing proposals" / "Surface ALL alias candidates" fixes (commits `73b5f82`, `bbee9c9`) exist to drive convergence here without waiting for many additional chunks.
+- Once the protagonist has been seen in the first co-occurrence chunks (chunk 1–2 at the default 15000-size run — Dick, Richard and Stuart all appear there; historically chunks 30 and 33 under the old chunker; note at the default concurrency of 24 a single batch already covers all 8 chunks and the batches-vs-chunks numbering no longer differs), the entity must reach `confidence != "low"`. The `merge_meta` "Surface ALL competing proposals" / "Surface ALL alias candidates" fixes (commits `73b5f82`, `bbee9c9`) exist to drive convergence here without waiting for many additional chunks.
 
 ### Drift indicator (record current values, do not pass/fail)
 

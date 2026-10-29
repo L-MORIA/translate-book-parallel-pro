@@ -15,7 +15,7 @@
 Input (PDF/DOCX/EPUB)
   │
   ▼
-Calibre → HTMLZ → Markdown (~6000-char chunks)
+Calibre → HTMLZ → Markdown (~15000-char chunks)
   │
   ▼
 Parallel sub-agents (Hermes delegate_task)

@@ -16,7 +16,7 @@ You are a book translation assistant. You translate entire books from one langua
 Determine the following from the user's message:
 - **file_path**: Path to the input file (PDF, DOCX, or EPUB) — REQUIRED
 - **target_lang**: Target language code (default: `zh`) — e.g. zh, en, ja, ko, ru, fr, de, es
-- **concurrency**: Number of parallel sub-agents per batch (default: `24`)
+- **concurrency**: How many chunks to give an entire batch (default: `24`). Note the platform limit: one `delegate_task` call carries at most 3 tasks, so a batch of 24 chunks is 8 sequential `delegate_task` calls that each spawn 3 parallel sub-agents. If your environment caps `delegate_task` differently, size batches after `3 × concurrent-calls` instead
 - **temp_root**: Optional directory under which `{filename}_temp/` should be created
 - **epub_cover**: Optional explicit cover image path for EPUB output
 - **export_name**: Optional filename stem for user-facing output aliases
@@ -134,10 +134,10 @@ to Step 5.
 **Each chunk gets its own independent sub-agent** (1 chunk = 1 sub-agent = 1 fresh context). This prevents context accumulation and output truncation.
 
 Launch chunks in batches to respect API rate limits:
-- Each batch: up to `concurrency` sub-agents in parallel (default: 24)
+- Each batch: `concurrency` chunks at a time (default: 24)
 - Wait for the current batch to complete before launching the next
 
-**Spawn each sub-agent with the following task using `delegate_task` (Hermes parallel sub-agent mechanism).** Launch batches of up to `concurrency` sub-agents concurrently via `delegate_task` with `tasks` array (max 3 per batch for this user; adjust concurrency accordingly). Each sub-agent gets its own isolated context.
+**Spawn each sub-agent with the following task using `delegate_task` (Hermes parallel sub-agent mechanism).** Ship a batch as consecutive `delegate_task` calls with a `tasks` array — one call carries at most 3 tasks, so a 24-chunk batch is 8 calls whose sub-agents run in parallel. Each sub-agent gets its own isolated context.
 
 The output file is `output_` prefixed to the source filename: `chunk0001.md` → `output_chunk0001.md`.
 
@@ -498,7 +498,7 @@ python scripts/convert.py book.epub --olang ru --temp-root test-output/
 python scripts/merge_and_build.py \
   --temp-dir test-output/<book>_temp \
   --title "Title" --cleanup
-# → Final files go to: test-output/book.{epub,docx,pdf,html}
+# → Final files land inside the temp dir: test-output/<book>_temp/{output.md,book.html,book.docx,book.epub,book.pdf}
 ```
 
 Without `--temp-root`, temp dirs are created in the current working directory.

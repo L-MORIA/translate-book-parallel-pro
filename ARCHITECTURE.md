@@ -11,7 +11,8 @@
 │                                                                     │
 │  ebook-convert → HTMLZ → input.html → input.md                     │
 │                                                                     │
-│  Output: chunk0001.md ~ chunk00NN.md (each ~6000 chars)            │
+│  Output: chunk0001.md ~ chunk00NN.md (each ~15000 chars by default,
+│          tunable via --chunk-size)                                 │
 │          manifest.json  (SHA-256 hashes for integrity)              │
 │          source_fingerprint.json  (SHA-256 of source bytes)         │
 │          config.txt  (pipeline metadata + original title)           │
@@ -121,7 +122,7 @@
 
 ### 1. Isolated Context per Chunk
 
-Each sub-agent translates exactly **one chunk** (~6000 chars) in a completely fresh context window. The naive approach — feeding a whole book into a single LLM session — inevitably degrades quality: the model's attention dilutes across hundreds of pages, the middle chapters suffer, and output truncation becomes likely.
+Each sub-agent translates exactly **one chunk** (~15000 chars by default, tunable via `--chunk-size`) in a completely fresh context window. The naive approach — feeding a whole book into a single LLM session — inevitably degrades quality: the model's attention dilutes across hundreds of pages, the middle chapters suffer, and output truncation becomes likely.
 
 By contrast, this pipeline gives every fragment of the book the **same ideal conditions** as the first page. No context decay, no accumulated noise, no truncation. The model can focus 100% of its capacity on a single coherent passage.
 
@@ -176,20 +177,20 @@ This makes the skill practical for real use: you can start a large translation, 
 
 ### 7. Multiple Output Formats from One Pipeline
 
-The same translated chunks feed **five output formats** simultaneously:
+The same translated chunks feed **four output formats** simultaneously:
 - **HTML** — web-ready with floating table of contents
 - **DOCX** — Microsoft Word, editable
 - **EPUB** — standard e-book format
 - **PDF** — print-ready
 
-This is not a afterthought: `merge_and_build.py` produces all five from the merged `output.md` in a single pass.
+`book_doc.html` alongside them is an intermediate — the pandoc rendering that Calibre converts into these formats. This is not an afterthought: `merge_and_build.py` produces `output.md`, `book.html` and the three Calibre formats from the merged chunks in a single pass, and exits non-zero if any format fails.
 
 ### 8. Calibre-Mediated Input Normalization
 
 PDF, DOCX, and EPUB are wildly different formats. Rather than writing separate parsers for each, the pipeline delegates to **Calibre's `ebook-convert`**, which normalizes any input → HTMLZ → HTML → Markdown. This means:
 - One conversion script handles all input formats
 - Edge cases (DRM-free PDFs with complex layouts, legacy EPUB2, DOCX with tracked changes) are handled by Calibre's mature codebase
-- Adding a new input format requires zero pipeline changes — if Calibre supports it, the pipeline does too
+- Adding a new input format is one change: the extension allowlist in `convert.py` (`['.pdf', '.docx', '.epub']`). Everything downstream is Calibre's job — the converter itself accepts whatever `ebook-convert` can read
 
 ### Why This Architecture Produces Better Translations Than Single-Session Approaches
 

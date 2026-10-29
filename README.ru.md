@@ -15,7 +15,7 @@
 Вход (PDF/DOCX/EPUB)
   │
   ▼
-Calibre → HTMLZ → Markdown (чанки ~6000 символов)
+Calibre → HTMLZ → Markdown (чанки ~15000 символов)
   │
   ▼
 Параллельные саб-агенты (Hermes delegate_task)

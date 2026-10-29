@@ -4,7 +4,7 @@ Smoke baseline — cheapest full-pipeline input that still exercises convert, ch
 
 - File: `sleepy-hollow.epub`
 - Source: Project Gutenberg #41 *The Legend of Sleepy Hollow* (`epub3.images`)
-- Why this baseline: at `target_size=6000` the input splits into ~21 chunks (about 13 story chunks + 8 PG boilerplate chunks), roughly 55% of the cost of `standard-alice`. The `Headless Horseman / Galloping Hessian / spectre / goblin` alias chain spans ~9 chunks, so cross-chunk entity tracking still gets exercised.
+- Why this baseline: with the current default (`--chunk-size 15000`) it splits into **7 measured chunks**, enough to exercise cross-chunk alias tracking: the `Headless Horseman / Galloping Hessian / spectre / goblin` alias chain spans several of them, so cross-chunk entity tracking still gets exercised. (Historical note: under the v1.2.0 chunker at the 6000 default the same input split into ~21 chunks; the v1.2.3 heading-aware splitter changed that, and the current default is 15000 — any of these numbers describes only the configuration that measured it.)
 - Coverage gap: only 1 image (the cover) — does **not** exercise inline-image preservation. Use `standard-alice` for image-path coverage.
 
 Run from `tests/.artifacts/` so generated files stay out of the repo root:
@@ -23,13 +23,24 @@ See `tests/baselines/README.md` for the three-tier convention.
 
 *Forward-looking targets, not yet validated. The first full pipeline run after this section was added is the validation event — promote items to **Measured** as a run confirms them, or correct the targets if the run reveals the spec was wrong.*
 
-### Measured
+### Measured (integration smoke, real Calibre run of 2026-10-28)
 
-None — no `tests/.artifacts/sleepy-hollow_temp/` exists yet.
+The pipeline under its current defaults (`--chunk-size 15000`) splits this
+baseline into exactly **7 chunks** on every real run. Note that
+`tests/integration_smoke.py` asserts chunk *properties* (≥2 chunks, lossless
+±2% byte conservation, no chunk over 110% of 15000 chars, manifest count
+equality) — the exact `7` is noise-stable but not gated in CI.
 
-### Expected target (unverified — needs first full pipeline run)
+- `manifest.chunk_count == 7`, chunk files `chunk0001.md`–`chunk0007.md`
+- All 4 final formats generated with real Calibre 9.11:
+  `book.docx` OK, `book.epub` OK, `book.pdf` OK (this requires the
+  SVG-wrapped-illustration fix from v1.2.8; before it, DOCX always failed)
+- The cover image is preserved end-to-end into the final outputs
+  (`000000.jpg` shows up inside `book.epub`/`book.docx`)
 
-- `manifest.chunk_count` is approximately 21 (this `SOURCE.md` says `~21` above). First run records the exact value; subsequent runs assert equality against the recorded value, not against `21`. A first-run result of 20 or 22 is an estimation correction, not a regression.
+### Expected target (unverified — needs a full pipeline run with real translation)
+
+- `manifest.chunk_count` is 7 (see **Measured**). First run with a different code version records the exact value; subsequent runs assert equality against the recorded value, not against `7`
 - All `chunk*.md` and matching `output_chunk*.md` exist; count matches `manifest.chunk_count`
 - 1 image (cover) preserved end-to-end into the final EPUB
 - All 4 final formats generated: `book.html`, `book.docx`, `book.epub`, `book.pdf`

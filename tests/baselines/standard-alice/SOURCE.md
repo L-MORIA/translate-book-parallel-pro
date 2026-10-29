@@ -18,11 +18,18 @@ curl -L -o tests/baselines/standard-alice/standard-alice.epub \
   "https://standardebooks.org/ebooks/lewis-carroll/alices-adventures-in-wonderland/downloads/alices_adventures_in_wonderland.epub"
 ```
 
-Verify against the measured run: `source_hash` in `manifest.json` was
-`6b1ea8ca29311ff8c43740b5a87d3fcfe0b906eb69bdcc74585d81a280f40c09`
-(`sha256sum standard-alice.epub`). Standard Ebooks occasionally re-renders
-its files — if the hash differs, the Measured values below must be
-re-validated before use as pass/fail assertions.
+Verify the fetched file against the bytes this baseline was measured with:
+`sha256sum standard-alice.epub` must print
+`d708184c72ccb1848e10e0b456e2ec145c67a3b93ba562fc528cfa07754e5140`
+(10 635 439 bytes — the git blob `95f8c238` at `cde660b`, from which the file
+was restored when the release stopped tracking it). Standard Ebooks
+occasionally re-renders its files — if the hash differs, the Measured values
+below must be re-validated before use as pass/fail assertions.
+
+**What `manifest.json`'s `source_hash` is:** the SHA-256 of the *generated
+`input.md`*, not of the epub. It depends on the conversion code (cleaning,
+chunker version), so it is only comparable between runs of the same pipeline
+version — the epub hash above is the right identity check for the file.
 
 Run the repository baseline test from `tests/.artifacts/` so generated files stay out of the repo root:
 
@@ -38,13 +45,21 @@ python ../../scripts/merge_and_build.py --temp-dir standard-alice_temp --title "
 
 See `tests/baselines/README.md` for the three-tier convention (Measured / Expected target / Drift indicator).
 
-### Measured (from current `tests/.artifacts/standard-alice_temp/`)
+### Measured (historical — pinned to the configuration of that run)
+
+The numbers below come from the v1.2.0-era run and are only reproducible with
+its configuration: the 11 MB fixture is **not in git** (verify the SHA-256
+below if you re-fetch it) and the run used `target_size=6000`/`concurrency 8`,
+both defaults later raised to `--chunk-size 15000` / `24`. Treat them as a
+reference from that run; a re-run under current defaults must re-measure and
+re-record, not fail against these numbers by default. To reproduce the chunk
+level, pass `--chunk-size 6000` to `convert.py`.
 
 Full pipeline run completed at `target_size=6000`, default concurrency 8, 4 batches.
 
 `manifest.json`:
-- `chunk_count == 38`
-- `source_hash == "6b1ea8ca29311ff8c43740b5a87d3fcfe0b906eb69bdcc74585d81a280f40c09"`
+- `chunk_count == 38` (historical; with the v1.2.3+ chunker this input converts to 31 chunks at `--chunk-size 6000` and 13 at the 15000 default — conversion-only measurement of 2026-10-28)
+- `source_hash == "6b1ea8ca29311ff8c43740b5a87d3fcfe0b906eb69bdcc74585d81a280f40c09"` (SHA-256 of that run's generated `input.md`; it is not the epub's hash — see the identity note above)
 - `chunks[]` has 38 entries, sequential `chunk0001`–`chunk0038`, each with a non-empty `source_hash` and matching `output_file`
 
 Files on disk:
@@ -81,7 +96,7 @@ Note on the auto-applied `King` (`国王`) entity, separate from `King of Hearts
 
 Note on `Wonderland`, `Frog-Footman`: a few entities carry `confidence: high` without enough `evidence_refs` to satisfy `merge_meta._confidence_for_evidence_count`. This is **not** an anomaly — `scripts/glossary.py` validates `confidence` against the enum only; the merge-time promotion rule applies only inside `_append_evidence_ref`. Seeded or reused entries can legitimately carry high confidence with sparse `evidence_refs`.
 
-Final-format outputs:
+Final-format outputs (historical sizes — later releases add a sanitizer, TOC and SVG-unwrap steps, so byte counts differ from a current run):
 - `output.md`: 160,705 bytes (merged translated markdown)
 - `book.html`: 189,824 bytes (web version with floating TOC)
 - `book_doc.html`: 182,797 bytes (ebook-style version)
@@ -92,7 +107,7 @@ Final-format outputs:
 
 ### Expected target (unverified)
 
-None — all previous targets validated by the run above.
+None — all previous targets validated by the run above. If the fixture is re-fetched or the pipeline defaults change, re-measure and re-record here rather than comparing against this historical block.
 
 ### Drift indicator (record current values, do not pass/fail)
 

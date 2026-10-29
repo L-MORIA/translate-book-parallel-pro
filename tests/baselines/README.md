@@ -11,13 +11,21 @@ Generated outputs do not belong here. Put them under `tests/.artifacts/`.
 
 ## Tiers
 
-| Tier | Baseline | Chunks (target_size=6000) | Inline images | When to run |
+| Tier | Baseline | Chunks (measured) | Inline images | When to run |
 |---|---|---|---|---|
-| Smoke | `sleepy-hollow` | ~21 | 0 (cover only) | Default CI / quick iteration — wired to CI via `tests/integration_smoke.py` |
-| Gold | `standard-alice` | ~38 | ~45 | Release-gate / image-path coverage — **not checked into git** (11 MB): fetch it on demand, see `standard-alice/SOURCE.md` |
-| Alias-stress (opt-in) | `diligent-dick` | ~57 | 5 | When changing `merge_meta` or `glossary` |
+| Smoke | `sleepy-hollow` | **7** at the current default (`--chunk-size 15000`); `~21` historically under the v1.2.0 chunker at the 6000 default | 0 (cover only) | Default CI / quick iteration — wired to CI via `tests/integration_smoke.py` |
+| Gold | `standard-alice` | **31** at `--chunk-size 6000` and **13** at the current default with the v1.2.3+ chunker (`~38` historical, see `standard-alice/SOURCE.md`) | ~45 | Release-gate / image-path coverage — **not checked into git** (11 MB): fetch it on demand, see `standard-alice/SOURCE.md` |
+| Alias-stress (opt-in) | `diligent-dick` | **8** at the current default / **16** at `--chunk-size 6000` (`~57` historical, see `diligent-dick/SOURCE.md`) | 5 | When changing `merge_meta` or `glossary` |
 
-The smoke baseline is the cheapest way to exercise convert → chunk → glossary → merge → build. It deliberately gives up inline-image coverage; use the gold baseline whenever image handling could be affected. The alias-stress baseline is intentionally larger than the gold one because its value lies in `Dick / Richard / Stuart` co-occurring across ~9 consecutive chunks — a contested-variant cross-batch scenario the smaller baselines cannot reproduce.
+Chunk numbers come from measured runs of a specific configuration —
+
+- **Current code + current defaults (convert.py v1.2.3+ chunker):** sleepy-hollow 7, standard-alice 13, diligent-dick 8.
+- **Current code + explicit `--chunk-size 6000`:** standard-alice 31, diligent-dick 16.
+- **Historical (v1.2.0 chunker at the 6000 default):** sleepy-hollow ~21, standard-alice ~38, diligent-dick ~57.
+
+Do not compare a run against a row measured under a different configuration or chunker version — read the per-baseline `SOURCE.md` for the exact run setup and re-measure if yours differs.
+
+The smoke baseline is the cheapest way to exercise convert → chunk → glossary → merge → build. It deliberately gives up inline-image coverage; use the gold baseline whenever image handling could be affected. The alias-stress baseline's value lies in `Dick / Richard / Stuart` co-occurring across nearly the whole book (measured with the current chunker: chunks 1–6 of 8 at the default size), a contested-variant cross-batch scenario the smaller baselines cannot reproduce.
 
 ## Expected outcome convention
 
