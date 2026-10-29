@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.14 — CI runners pinned to ubuntu-24.04 after the 26.04 migration broke setup (2026-10-29)
+
+- **Fixed** `.github/workflows/ci.yml`: `ubuntu-latest` migrated to Ubuntu 26.04 on 2026-10-19, and the pinned `actions/setup-python@v5.6.0` has no Python 3.9–3.13 builds for that image — every matrix `test` job died in "Set up Python" with *"The version '3.9' with architecture 'x64' was not found for Ubuntu 26.04"* (CI run 40849120702, also reproducible on the pre-T-02 workflow). This was a runner-infrastructure break, not a code regression: `lint` and `integration` passed — they don't need the missing Python versions
+- All three jobs now run on `ubuntu-24.04` explicitly — the image the workflow was proven on through v1.2.11. Revisit when `actions/setup-python` majors up to support 26.04 for the full 3.9–3.14 matrix
+- Also cancelled/ignored: the queued v1.2.13 run completed with the same infra failure before this fix
+- **Verified**: workflow YAML parses; pushes verified via `git ls-remote` == HEAD
+
 ## v1.2.13 — Test coverage sweep for the audit §7 gaps (2026-10-29)
 
 - **Tests** (T-01): the audit counted 72 of 129 functions absent from the suite and listed the important ones; this batch covers the named paths, adding 43 tests (352 → 395), all mocking the external tools — no Calibre/pandoc needed:

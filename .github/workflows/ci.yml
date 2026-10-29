@@ -7,11 +7,17 @@ on:
     branches: [master]
 
 jobs:
+  # NOTE: runners are pinned to 24.04 — ubuntu-latest migrated to Ubuntu 26.04
+  # on 2026-10-19 and actions/setup-python v5 (pinned below) has no Python
+  # 3.9–3.13 builds for it ("The version '3.9' ... was not found for Ubuntu
+  # 26.04", CI run 40849120702).  Revisit when the runner image and setup-python
+  # major are aligned again.
+
   lint:
     # Correctness-only ruff gate (rules selected in ruff.toml): Python syntax
     # errors and undefined names. Style rules are deliberately out of scope —
     # the codebase carries style remarks by design (audit T-02).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
@@ -32,7 +38,7 @@ jobs:
         run: python -m ruff check .
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     strategy:
       matrix:
@@ -63,7 +69,7 @@ jobs:
   integration:
     # Real-pipeline smoke gate on the sleepy-hollow baseline:
     # Calibre HTMLZ conversion -> chunking -> manifest -> merge -> HTML -> TOC
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
