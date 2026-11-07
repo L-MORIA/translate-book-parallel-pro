@@ -195,7 +195,10 @@ class ConvertBookTests(ToolsTestCase):
             self.assertEqual(script, 'convert.py')
             self.assertIn('--olang', argv)
             self.assertIn('ru', argv)
-            return 0, 'Created manifest.json (2 chunks)', ''
+            out = ('Created manifest.json (1 chunks)\n'
+                   f'Temp directory: {self.root / "newbook_temp"}\n'
+                   'Conversion completed successfully!')
+            return 0, out, ''
 
         (self.root / 'newbook_temp').mkdir()
         manifest.create_manifest(

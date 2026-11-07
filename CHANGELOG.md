@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.1 — CI fixes for the MCP server: Python 3.9 compatibility + deterministic temp-dir pick (2026-11-08)
+
+- **Fixed** `translate_book_mcp.tools.submit_translation`: `Path.write_text(newline=...)` exists only since Python 3.10, and the supported matrix starts at 3.9 — the CI 3.9 leg died with `TypeError: write_text() got an unexpected keyword argument 'newline'` in all four submit-path tests (CI run 42415745738; the Windows dev box runs 3.14 and hid it). Replaced with an explicit `open(..., newline='\n')` — LF endings still keep translated outputs byte-stable across Windows and Linux
+- **Fixed** `convert_book` temp-dir discovery: the "newest `*_temp` by mtime" heuristic is ambiguous when two runs land in the same timer tick (flaky locally on Windows: `book_temp` vs `newbook_temp` swapped). convert.py already prints `Temp directory: <path>` — the tool now parses that line (path validated against the workspace root) and keeps the mtime guess only as a fallback for older convert.py output
+- **Tests**: the convert fixture feeds the exact `Temp directory:` stdout; full suite 461 OK; `ruff check .` green
+
 ## v1.3.0 — MCP server MVP (stdio): the pipeline as tools for any MCP-capable agent (2026-11-08)
 
 - **Added** the ROADMAP.md P0 deliverable (M1–M3): `python scripts/mcp_server.py --workspace ROOT` serves the whole translation pipeline over the MCP stdio transport — newline-delimited JSON-RPC 2.0 implemented with the **standard library only**, no MCP SDK dependency (open question #1 resolved in favor of stdlib: the repo stays dependency-free and offline-capable; the used surface — initialize/ping/tools/resources/prompts — is small and covered by protocol tests). New package `translate_book_mcp/` (`paths.py` workspace confinement, `prompts.py` prompt templates, `tools.py` tool implementations, `server.py` protocol loop) plus the thin `scripts/mcp_server.py` entry point

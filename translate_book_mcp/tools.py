@@ -124,15 +124,29 @@ def convert_book(ws, args):
             "convert.py failed (exit %d); see logs for the reason" % code
         )
 
-    # convert.py names the directory {book_stem}_temp under temp_root; the
-    # newest one is ours.
-    candidates = sorted(
-        (p for p in Path(resolved_root).glob('*_temp') if p.is_dir()),
-        key=lambda p: p.stat().st_mtime, reverse=True,
-    )
-    if not candidates:
+    # convert.py announces the exact directory it created; trust that instead
+    # of a newest-wins mtime guess, which is ambiguous when two runs land in
+    # the same timer tick (observed on Windows).
+    temp_dir = None
+    match = re.search(r'^Temp directory: (.+)$', out, re.MULTILINE)
+    if match:
+        printed = Path(match.group(1).strip())
+        if not printed.is_absolute():
+            printed = Path(resolved_root) / printed
+        try:
+            temp_dir = ws.resolve_dir(str(printed))
+        except PathError:
+            temp_dir = None
+    if temp_dir is None:
+        # fallback: the newest *_temp directory under temp_root
+        candidates = sorted(
+            (p for p in Path(resolved_root).glob('*_temp') if p.is_dir()),
+            key=lambda p: p.stat().st_mtime, reverse=True,
+        )
+        if candidates:
+            temp_dir = candidates[0]
+    if temp_dir is None:
         raise ToolError("convert.py produced no *_temp directory")
-    temp_dir = candidates[0]
 
     mf = _load_manifest_or_none(str(temp_dir), logs)
     result = {
@@ -273,7 +287,11 @@ def submit_translation(ws, args):
             "(< 20% of source characters)"
         )
 
-    output_path.write_text(content, encoding='utf-8', newline='\n')
+    # explicit open(): Path.write_text(newline=...) exists only since 3.10,
+    # and the supported matrix starts at 3.9. LF endings keep translated
+    # outputs byte-stable across Windows and Linux.
+    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(content)
 
     meta = args.get('meta')
     meta_path = None
