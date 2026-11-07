@@ -22,6 +22,8 @@
 - `scripts/_mab_toc.py` — Table of contents generation (BS4 → regex fallback)
 - `scripts/_mab_formats.py` — DOCX/EPUB/PDF generation and export aliases
 - `scripts/_stdio.py` — UTF-8 stdout/stderr for CLI entry points (Windows cp1251 fix)
+- `scripts/mcp_server.py` — thin stdio MCP entry point (v1.3.0): `python scripts/mcp_server.py --workspace ROOT`
+- `translate_book_mcp/` — MCP server package: `paths.py` (workspace confinement), `prompts.py` (translation prompt templates), `tools.py` (convert/plan/prompt/submit/merge/validate/build), `server.py` (stdlib JSON-RPC 2.0 loop — no MCP SDK)
 - `scripts/calibre_html_publish.py` — Calibre format conversion wrapper
 - `scripts/template.html`, `scripts/template_ebook.html` — HTML templates
 

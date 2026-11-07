@@ -6,7 +6,7 @@ One pipeline, any agent: OpenCode, Hermes, Claude Code, Codex, ZCode, MiniMax
 Code, Kimi, Cursor, plain CI. No forks of the translation logic, no duplicated
 prompt files, no per-host copy of the pipeline.
 
-## Current state (v1.2.16)
+## Current state (v1.3.0)
 
 - The core is portable: `scripts/*.py` is plain Python; prompts, glossary,
   manifest, run_state and meta schemas are host-independent.
@@ -16,7 +16,13 @@ prompt files, no per-host copy of the pipeline.
 - OpenCode was verified end-to-end: `sleepy-hollow` → Russian, 17 chunks, 17
   isolated `general` sub-agents, DOCX/EPUB/PDF built.
 - UTF-8 CLI output is enforced by `scripts/_stdio.py`; the cp1251 crash in
-  `glossary.py print-terms-for-chunk` is fixed.
+  `glossary.py print-terms-for-chunk` is fixed, and the missing-glossary crash
+  is fixed too (v1.2.17).
+- **MCP server MVP shipped (v1.3.0)**: `python scripts/mcp_server.py
+  --workspace ROOT` serves all eight P0 tools over stdio with the standard
+  library only — no MCP SDK dependency (open question 1 resolved in favor of
+  stdlib JSON-RPC; the used surface — initialize/ping/tools/resources/prompts
+  — is small and stable). M1–M3 done; M4 (packaging) and M5 (HTTP) remain.
 
 The remaining problem is integration, not translation. Every host still needs
 its own glue: a skill file, a sub-agent call, a batch size. The roadmap removes
@@ -97,10 +103,12 @@ books over JSON-RPC.
 
 ### Milestones
 
-- **M1 — read-only:** `convert_book`, `get_status`, `get_translation_plan`,
-  `get_chunk_prompt`, resources. Verify with OpenCode and one other MCP client.
-- **M2 — write path:** `submit_translation`, `merge_meta`, `validate_book`.
-- **M3 — build:** `build_book`, format results, cleanup flags.
+- **M1 — read-only: ✅ v1.3.0** `convert_book`, `get_status`,
+  `get_translation_plan`, `get_chunk_prompt`, resources. Verified with a
+  subprocess-level end-to-end test (initialize → tools → submit → validate).
+- **M2 — write path: ✅ v1.3.0** `submit_translation`, `merge_meta`,
+  `validate_book`.
+- **M3 — build: ✅ v1.3.0** `build_book`, format results.
 - **M4 — packaging:** `translate-book-mcp` console entry point, config example,
   Docker image with Calibre + pandoc.
 - **M5 — HTTP:** streamable HTTP transport, auth, multi-client tests.
@@ -187,7 +195,8 @@ python scripts/translate_cli_workers.py --temp-dir <dir> \
 | Version | Scope |
 |---|---|
 | **v1.2.16** | UTF-8 CLI fix, `AGENT_ADAPTER.md`, this roadmap |
-| **v1.3.0** | MCP server MVP (stdio, M1–M3), OpenCode + one client verified |
+| **v1.2.17** | glossary CLI survives a missing glossary.json (found in a real run) |
+| **v1.3.0** ✅ | MCP server MVP (stdio, M1–M3), stdlib JSON-RPC, workspace confinement, 56 tests |
 | **v1.4.0** | Headless orchestrator, install script, adapter files |
 | **v1.5.0** | MCP HTTP transport, auth, Docker image |
 | **v2.0.0** | Unified CLI + MCP + all adapters, stable public tool schema |
@@ -201,7 +210,12 @@ python scripts/translate_cli_workers.py --temp-dir <dir> \
 
 ## Open questions
 
-1. MCP SDK dependency vs a minimal stdlib JSON-RPC implementation.
+1. ~~MCP SDK dependency vs a minimal stdlib JSON-RPC implementation~~ —
+   **resolved in v1.3.0: stdlib**. The repo stays dependency-free and
+   offline-capable (design principle 1); the implemented surface
+   (initialize/ping/tools/resources/prompts over newline-delimited JSON-RPC
+   2.0) is small and covered by protocol tests. Revisit only if a client
+   refuses the hand-rolled server.
 2. One high-level `translate_book` tool vs the granular tools above.
 3. How to expose image/binary chunks over MCP without huge payloads.
 4. HTTP auth model for shared/remote deployments.

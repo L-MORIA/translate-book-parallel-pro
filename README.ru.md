@@ -148,6 +148,19 @@ python scripts/merge_and_build.py --temp-dir book_temp --title "Название
 Kimi и любом MCP-совместимом агенте. Headless-оркестратор и устанавливаемые
 адаптеры под хосты — промежуточные шаги.
 
+**MVP MCP-сервера реализован (v1.3.0)** — stdio, JSON-RPC на чистом stdlib,
+без SDK-зависимости:
+
+```bash
+python scripts/mcp_server.py --workspace /путь/к/книгам
+```
+
+Инструменты: `convert_book`, `get_status`, `get_translation_plan`,
+`get_chunk_prompt`, `submit_translation`, `merge_meta`, `validate_book`,
+`build_book`. Сервер сам не вызывает LLM — хост-агент переводит промпты,
+которые тот возвращает (сам или через своих суб-агентов). Осталось:
+упаковка (M4) и HTTP-транспорт (M5).
+
 ## Известные проблемы
 
 - **Память:** При concurrency >1 на системах с 8GB RAM возможно переполнение памяти.

@@ -148,6 +148,18 @@ same pipeline runs in OpenCode, Claude Code, Codex, ZCode, MiniMax Code, Kimi
 and any other MCP-capable agent; headless orchestration and installable host
 adapters are the intermediate steps.
 
+The **MCP server MVP is implemented (v1.3.0)** — stdio, stdlib-only JSON-RPC,
+no SDK dependency:
+
+```bash
+python scripts/mcp_server.py --workspace /path/to/books
+```
+
+Tools: `convert_book`, `get_status`, `get_translation_plan`, `get_chunk_prompt`,
+`submit_translation`, `merge_meta`, `validate_book`, `build_book`. The server
+never calls an LLM — the host agent translates the prompts it returns (itself
+or via its sub-agents). Remaining: packaging (M4) and HTTP transport (M5).
+
 ## Known Issues
 
 - **Memory:** with `concurrency > 1` on systems with 8 GB RAM, memory exhaustion is possible.

@@ -117,9 +117,15 @@ If you want to remove the dependency on host sub-agents entirely:
 1. **Headless orchestrator** — a Python CLI that calls an OpenAI-compatible
    API directly for each chunk. Requires an API key and model configuration;
    the host agent only runs the CLI.
-2. **MCP server** — expose `convert`, `plan`, `get_chunk_prompt`,
-   `submit_translation`, `build` as MCP tools. Any MCP-capable agent can drive
-   the pipeline without a custom adapter.
+2. **MCP server (v1.3.0, shipped)** — `python scripts/mcp_server.py
+   --workspace <root>` exposes the pipeline as MCP tools over stdio
+   (`convert_book`, `get_status`, `get_translation_plan`, `get_chunk_prompt`,
+   `submit_translation`, `merge_meta`, `validate_book`, `build_book`). Any
+   MCP-capable agent drives the whole run without a custom adapter: it calls
+   `convert_book`, fetches `get_chunk_prompt` per chunk, translates the prompt
+   itself or spawns workers, writes results with `submit_translation`, and
+   finishes with `validate_book` + `build_book`. The server never calls an
+   LLM and confines every path to the workspace root.
 3. **CLI-agent workers** — use `opencode run`, `claude -p`, or another CLI
    agent as the per-chunk worker. The main orchestrator stays the same; only
    the "spawn worker" command changes.
