@@ -2,7 +2,9 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-**Hermes Agent Skill** — translates entire books (PDF/DOCX/EPUB) into any language using parallel sub-agents with a resumable chunked pipeline.
+**Agent Skill** — translates entire books (PDF/DOCX/EPUB) into any language using parallel sub-agents with a resumable chunked pipeline.
+
+Originally packaged for Hermes Agent. The pipeline itself is host-agnostic: it runs on OpenCode, Claude Code, Codex, or any agent with shell/file tools and a sub-agent primitive — see [AGENT_ADAPTER.md](AGENT_ADAPTER.md).
 
 > Ported from [deusyu/translate-book](https://github.com/deusyu/translate-book) (Rainman Translate Book) for Hermes Agent.  
 > Original inspired by [claude_translater](https://github.com/wizlijun/claude_translater).
@@ -18,7 +20,7 @@ Input (PDF/DOCX/EPUB)
 Calibre → HTMLZ → Markdown (~15000-char chunks)
   │
   ▼
-Parallel sub-agents (Hermes delegate_task)
+Parallel sub-agents (host delegate/Task tool)
   │  each translates 1 chunk in isolated context
   ▼
 Validate → Merge → Build
@@ -31,7 +33,7 @@ Each chunk gets its own independent sub-agent with a fresh context window. This 
 
 ## Features
 
-- **Parallel translation** — multiple chunks translated concurrently via `delegate_task`
+- **Parallel translation** — multiple chunks translated concurrently via the host's subagent/Task tool
 - **Resumable** — automatically skips already-translated chunks on re-run
 - **Glossary-driven term consistency** — sub-agents share a canonical term table
 - **Selective re-translation** — only re-translate chunks affected by glossary edits
@@ -139,6 +141,13 @@ Language codes are extensible — add new ones to the skill triggers in `SKILL.m
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full pipeline diagram and component descriptions.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md). The primary direction is an MCP server so the
+same pipeline runs in OpenCode, Claude Code, Codex, ZCode, MiniMax Code, Kimi
+and any other MCP-capable agent; headless orchestration and installable host
+adapters are the intermediate steps.
+
 ## Known Issues
 
 - **Memory:** with `concurrency > 1` on systems with 8 GB RAM, memory exhaustion is possible.
@@ -147,7 +156,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full pipeline diagram and compone
 
 ## What Was Changed from Original
 
-See [CHANGELOG.md](CHANGELOG.md) for the complete list of Hermes-specific adaptations.
+See [CHANGELOG.md](CHANGELOG.md) for the complete list of host-specific adaptations.
 
 ## License
 

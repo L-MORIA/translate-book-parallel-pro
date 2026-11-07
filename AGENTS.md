@@ -21,16 +21,18 @@
 - `scripts/_mab_html.py` — Markdown→HTML conversion (pandoc → py-markdown → regex fallback)
 - `scripts/_mab_toc.py` — Table of contents generation (BS4 → regex fallback)
 - `scripts/_mab_formats.py` — DOCX/EPUB/PDF generation and export aliases
+- `scripts/_stdio.py` — UTF-8 stdout/stderr for CLI entry points (Windows cp1251 fix)
 - `scripts/calibre_html_publish.py` — Calibre format conversion wrapper
 - `scripts/template.html`, `scripts/template_ebook.html` — HTML templates
 
-## Hermes-specific adaptations
+## Agent-specific adaptations
 
-- Sub-agent tool: `delegate_task` (not Claude Code `Agent`)
-- Python: `python` (not `python3`) — Hermes venv compatibility
-- All script invocations use `python` not `python3`
+- Host adapter guide: `AGENT_ADAPTER.md` — Hermes, OpenCode, Claude Code, Codex, generic/sequential
+- Hermes: sub-agent tool `delegate_task`; max 3 tasks per call (`delegation.max_concurrent_children` in `config.yaml`); the skill's batch `concurrency` default is 24
+- OpenCode: `subagent` tool (general agent), one call per chunk; OpenCode skills live in `.opencode/skills/<id>/SKILL.md`
+- Python: this repo's docs use `python` for Hermes venv compatibility; non-Hermes hosts may use `python3` or a venv (see `AGENT_ADAPTER.md`)
+- All script invocations in SKILL.md and scripts use `python` not `python3`
 - Shebangs: `#!/usr/bin/env python` not `#!/usr/bin/env python3`
-- Max 3 concurrent sub-agents via `delegate_task` by default (configurable via `delegation.max_concurrent_children` in `config.yaml`); the skill's batch `concurrency` default is 24
 
 ## Testing changes
 
@@ -82,7 +84,7 @@ python tests/integration_smoke.py
 
 - Do not reintroduce `page*` file support — it was intentionally removed
 - Do not hardcode paths in SKILL.md — use `{baseDir}`
-- Do not put `python3` in scripts or documentation — use `python`
+- Do not put `python3` in SKILL.md, scripts, or Hermes-facing docs — use `python` (`AGENT_ADAPTER.md` may mention `python3` for non-Hermes hosts)
 - Do not add mtime-based incremental rebuild for HTML/format generation — the current skip logic is intentionally simple (existence check). Metadata/template changes require manual cleanup.
 
 ## Known issues (Windows-specific)

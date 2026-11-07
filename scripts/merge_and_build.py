@@ -51,6 +51,7 @@ from _mab_html import (
     convert_md_to_html,
     MARKDOWN_AVAILABLE,
 )
+from _stdio import configure_utf8_stdio
 from _mab_toc import (
     generate_heading_id,
     generate_simple_toc_html,
@@ -151,6 +152,7 @@ def _resolve_title(title_arg, config):
 
 
 def main():
+    configure_utf8_stdio()
     parser = argparse.ArgumentParser(description='Merge translated pages and build final outputs')
     parser.add_argument('--temp-dir', required=True, help='Temp directory path')
     parser.add_argument('--title', default=None, help='Translated book title (override config)')

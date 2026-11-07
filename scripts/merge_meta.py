@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 import glossary as glossary_mod
+from _stdio import configure_utf8_stdio
 import meta as meta_mod
 
 
@@ -1029,6 +1030,7 @@ def cmd_status(temp_dir):
 
 
 def main():
+    configure_utf8_stdio(include_stdin=True)
     parser = argparse.ArgumentParser(description="Merge sub-agent meta files into glossary")
     sub = parser.add_subparsers(dest='cmd', required=True)
 

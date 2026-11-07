@@ -35,6 +35,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from _stdio import configure_utf8_stdio
+
 
 GLOSSARY_SCHEMA_VERSION = 2
 DEFAULT_TOP_N = 20
@@ -529,6 +531,7 @@ def format_terms_for_prompt(terms):
 
 
 def main():
+    configure_utf8_stdio()
     parser = argparse.ArgumentParser(description="Glossary management for translate-book")
     sub = parser.add_subparsers(dest='cmd', required=True)
 

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import glossary as glossary_mod
+from _stdio import configure_utf8_stdio
 from manifest import file_hash, load_manifest, read_output_text
 
 
@@ -311,6 +312,7 @@ def _print_json(data):
 
 
 def main():
+    configure_utf8_stdio()
     parser = argparse.ArgumentParser(description="Track selective re-translation state")
     sub = parser.add_subparsers(dest='cmd', required=True)
 

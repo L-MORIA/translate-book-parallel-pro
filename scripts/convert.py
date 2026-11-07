@@ -17,6 +17,7 @@ import json
 import re
 
 from manifest import create_manifest, file_hash
+from _stdio import configure_utf8_stdio
 
 
 # Single source of truth for the chunk size: the CLI default and the library
@@ -1021,6 +1022,7 @@ def _abort_on_strip_cache_conflict(blockers, temp_dir):
 
 def main():
     """Main conversion function"""
+    configure_utf8_stdio()
     parser = argparse.ArgumentParser(description="Convert PDF/DOCX/EPUB to markdown chunks via HTMLZ")
     parser.add_argument("input_file", help="Input file (PDF, DOCX, or EPUB)")
     parser.add_argument("-l", "--ilang", default="auto", help="Input language (default: auto)")

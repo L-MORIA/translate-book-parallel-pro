@@ -1,13 +1,13 @@
 ---
 name: translate-book-parallel-pro
-description: Translate books (PDF/DOCX/EPUB) into any language using parallel sub-agents (Hermes delegate_task). Optimised for powerful hardware (32GB+ RAM, 8+ CPU cores). Converts input -> Markdown chunks -> translated chunks -> HTML/DOCX/EPUB/PDF.
+description: Translate books (PDF/DOCX/EPUB) into any language using parallel sub-agents (host delegate/Task tool). Optimised for powerful hardware (32GB+ RAM, 8+ CPU cores). Converts input -> Markdown chunks -> translated chunks -> HTML/DOCX/EPUB/PDF.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, execute_code
 metadata: {"hermes":{"requires":{"bins":["python","pandoc","ebook-convert"],"anyBins":["calibre","ebook-convert"]},"homepage":"https://github.com/L-MORIA/translate-book-parallel-pro"}}
 ---
 
 # Book Translation Skill
 
-You are a book translation assistant. You translate entire books from one language to another by orchestrating a multi-step pipeline.
+You are a book translation assistant. You translate entire books from one language to another by orchestrating a multi-step pipeline. The pipeline is platform-neutral; host-specific wiring (subagent tool, interpreter, skill install layout) is described in `AGENT_ADAPTER.md`.
 
 ## Workflow
 
@@ -16,7 +16,7 @@ You are a book translation assistant. You translate entire books from one langua
 Determine the following from the user's message:
 - **file_path**: Path to the input file (PDF, DOCX, or EPUB) — REQUIRED
 - **target_lang**: Target language code (default: `zh`) — e.g. zh, en, ja, ko, ru, fr, de, es
-- **concurrency**: How many chunks to give an entire batch (default: `24`). Note the platform limit: one `delegate_task` call carries at most 3 tasks, so a batch of 24 chunks is 8 sequential `delegate_task` calls that each spawn 3 parallel sub-agents. If your environment caps `delegate_task` differently, size batches after `3 × concurrent-calls` instead
+- **concurrency**: How many chunks to give an entire batch (default: `24`). Your host may cap how many tasks one sub-agent call can carry (Hermes `delegate_task`: 3). Size batches after `tasks-per-call × parallel-calls`; if the host has no task cap, launch chunks directly.
 - **temp_root**: Optional directory under which `{filename}_temp/` should be created
 - **epub_cover**: Optional explicit cover image path for EPUB output
 - **export_name**: Optional filename stem for user-facing output aliases
@@ -137,7 +137,7 @@ Launch chunks in batches to respect API rate limits:
 - Each batch: `concurrency` chunks at a time (default: 24)
 - Wait for the current batch to complete before launching the next
 
-**Spawn each sub-agent with the following task using `delegate_task` (Hermes parallel sub-agent mechanism).** Ship a batch as consecutive `delegate_task` calls with a `tasks` array — one call carries at most 3 tasks, so a 24-chunk batch is 8 calls whose sub-agents run in parallel. Each sub-agent gets its own isolated context.
+**Spawn each sub-agent with the host's isolated-subagent primitive** — Hermes: `delegate_task` with a `tasks` array (max 3 per call); OpenCode: `subagent`; Claude Code: `Task`; another host: its equivalent. If the host has no subagent primitive, translate chunks sequentially, one fresh context per chunk. Ship a batch as consecutive calls; each sub-agent gets its own isolated context.
 
 The output file is `output_` prefixed to the source filename: `chunk0001.md` → `output_chunk0001.md`.
 

@@ -15,6 +15,8 @@ import re
 import sys
 from pathlib import Path
 
+from _stdio import configure_utf8_stdio
+
 
 CHUNK_RE = re.compile(r'^chunk(\d+)\.md$')
 
@@ -88,6 +90,7 @@ def format_for_prompt(context):
 
 
 def main():
+    configure_utf8_stdio()
     parser = argparse.ArgumentParser(
         description="Print read-only neighboring chunk excerpts for a translation prompt"
     )

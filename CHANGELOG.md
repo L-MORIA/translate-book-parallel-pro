@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.16 — UTF-8 CLI output on Windows + universal agent adapter and roadmap (2026-11-07)
+
+- **Fixed** Windows CLI encoding: `glossary.py print-terms-for-chunk` crashed with `UnicodeEncodeError: 'charmap' codec can't encode characters` when stdout was a cp1251/cp866 pipe, because the term table header contains `原文 | 别名 | 译文` (seen on a Windows machine, reproduced in the OpenCode end-to-end run). Added `scripts/_stdio.py` with `configure_utf8_stdio()` and called it from `glossary.py`, `chunk_context.py`, `merge_meta.py`, `run_state.py`, `convert.py` and `merge_and_build.py`. `merge_meta.py apply-merge` also reads stdin as UTF-8, so translated entity names survive the pipe. Console output is now valid UTF-8 on every platform/locale.
+- **Added** `AGENT_ADAPTER.md`: the pipeline is host-agnostic (plain Python + prompts); only the skill install path, sub-agent primitive, concurrency cap and interpreter name need an adapter. Documents Hermes, OpenCode, Claude Code, Codex, ZCode/MiniMax Code/Kimi and the sequential fallback for hosts without sub-agents.
+- **Added** `ROADMAP.md`: the MCP server is the primary path to full host independence (tools for convert/plan/prompt/submit/merge/build, stdio first, HTTP later), with the headless OpenAI-compatible orchestrator, installable per-host adapters and CLI-agent workers as intermediate options.
+- **Changed** `SKILL.md` and the English/Russian READMEs to describe the sub-agent step as the host's delegate/Task primitive instead of Hermes `delegate_task` only.
+- **Verified** end-to-end in OpenCode on the `sleepy-hollow` baseline → Russian: 17 chunks translated by 17 isolated `general` sub-agents, glossary meta merged, DOCX/EPUB/PDF built (294 KB / 338 KB / 559 KB).
+- **Tests**: 396 → 400 (`tests/test_stdio.py` covers the cp1251 stdout crash, UTF-8 JSON output, UTF-8 stdin for `apply-merge`, and the no-`reconfigure` stream case); `ruff check .` stays green.
+
 ## v1.2.15 — `_resolve_title()` understands Windows paths on Linux (found by CI) (2026-10-29)
 
 - **Fixed** `merge_and_build._resolve_title()` (v1.2.10): when no `--title` and no `original_title` exist, the fallback takes the stem of `config.input_file` with `os.path.basename()` — which does not split Windows-style `C:\books\x.epub` on Linux, so a CI run got the whole path as the book title (`ResolveTitleTests.test_falls_back_to_the_input_filename` failed under ubuntu-24.04). The path is now normalised over `\` and `/` before taking the stem; correct on both platforms
