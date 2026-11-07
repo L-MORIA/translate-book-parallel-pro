@@ -134,6 +134,50 @@ The current design intentionally uses the host LLM, so it needs no API key and
 no second model. Options 1–3 are useful when the host has no sub-agent tool or
 when you want the same orchestration in CI/cron.
 
+### Connecting agents to the MCP server
+
+The same server command is registered once per host; every MCP-capable agent
+then drives the pipeline with zero repo edits. Start it from the repository
+root so `--workspace .` matches the project.
+
+**OpenCode** — add a `mcp` section to the project `opencode.json` (or the
+global `~/.config/opencode/opencode.json`):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "translate-book": {
+      "type": "local",
+      "command": ["python", "scripts/mcp_server.py", "--workspace", "."],
+      "enabled": true
+    }
+  }
+}
+```
+
+**ZCode** — add the server to the workspace config `<repo>/.zcode/config.json`
+(user scope: `~/.zcode/cli/config.json`); workspace-scoped servers are trusted
+and auto-connected at session start:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "translate-book": {
+        "command": "python",
+        "args": ["scripts/mcp_server.py", "--workspace", "."]
+      }
+    }
+  }
+}
+```
+
+Both hosts need `python` on PATH and the repo's tool deps (`ebook-convert`,
+`pandoc`) installed for `convert_book`/`build_book`; the other tools work
+without them. Other MCP clients (Claude Code, Codex, Cursor) use the same
+command with their own stdio server config format.
+
 ## Smoke-testing a new host
 
 ```bash
