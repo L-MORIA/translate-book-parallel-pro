@@ -553,8 +553,21 @@ def main():
     glossary_path = os.path.join(args.temp_dir, 'glossary.json')
 
     if args.cmd == 'count-frequencies':
+        if not os.path.exists(glossary_path):
+            # The skill supports runs without a glossary (merge_meta.py treats
+            # a missing one as a readable error, not a crash). With no glossary
+            # there are no terms to count — a no-op, not a traceback.
+            sys.stderr.write(f"No glossary at {glossary_path}; nothing to count.\n")
+            return
         count_frequencies(glossary_path, args.temp_dir)
     elif args.cmd == 'print-terms-for-chunk':
+        if not os.path.exists(glossary_path):
+            # SKILL.md §4 documents "no glossary" as empty stdout: the main
+            # agent omits rule #13 when the term table is empty. A traceback
+            # here (v1.2.15 and earlier) killed real runs before any
+            # translation sub-agent was spawned.
+            sys.stderr.write(f"No glossary at {glossary_path}; printing no term table.\n")
+            return
         glossary = load_glossary(glossary_path)
         chunk_path = os.path.join(args.temp_dir, args.chunk_filename)
         with open(chunk_path, 'r', encoding='utf-8') as f:
@@ -566,7 +579,18 @@ def main():
         if table:
             print(table)
     elif args.cmd == 'compute-hash':
-        glossary = load_glossary(glossary_path)
+        try:
+            glossary = load_glossary(glossary_path)
+        except FileNotFoundError as e:
+            # Utility command with no documented empty-output contract; report
+            # a readable error with a next step like merge_meta.py does.
+            sys.stderr.write(f"error: {e}\n")
+            sys.stderr.write(
+                "hint: build the glossary first (SKILL.md §3.5 - write "
+                "glossary.json into the temp dir), or use a temp dir that "
+                "already has one\n"
+            )
+            sys.exit(2)
         print(glossary_hash(glossary))
 
 

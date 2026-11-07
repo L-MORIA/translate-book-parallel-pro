@@ -716,5 +716,58 @@ class SaveGlossaryAtomicTests(unittest.TestCase):
             self.assertEqual(loaded['terms'][1]['source'], 'Brooklyn')
 
 
+class MissingGlossaryCliTests(unittest.TestCase):
+    """The skill supports runs without glossary.json (merge_meta.py already
+    treats a missing glossary as a readable error, not a crash). SKILL.md §4
+    documents "no glossary" as EMPTY STDOUT from print-terms-for-chunk — the
+    main agent omits rule #13 when the table is empty. Before the CLI gates,
+    both scan commands died with FileNotFoundError and exit 1, which killed
+    real runs at the term-table step before any sub-agent was spawned."""
+
+    def run_cli(self, *argv):
+        stdout, stderr = StringIO(), StringIO()
+        with mock.patch.object(sys, 'argv', ['glossary.py', *argv]), \
+                mock.patch.object(sys, 'stdout', stdout), \
+                mock.patch.object(sys, 'stderr', stderr):
+            glossary.main()  # returning normally == exit code 0
+        return stdout.getvalue(), stderr.getvalue()
+
+    def test_print_terms_for_chunk_without_glossary_prints_nothing_and_exits_zero(self):
+        with temp_book_dir(chunks={'chunk0001.md': 'Alice met the Cat.'}) as (tmp, _path):
+            stdout, stderr = self.run_cli('print-terms-for-chunk', tmp, 'chunk0001.md')
+        self.assertEqual(stdout, '')
+        self.assertIn('No glossary', stderr)
+        self.assertIn('no term table', stderr)
+
+    def test_print_terms_for_chunk_without_glossary_works_for_every_chunk_in_a_run(self):
+        # Regression shape of the real failure: a 5-chunk run queries the term
+        # table per chunk; every call must survive, not just the first.
+        chunks = {f'chunk000{i}.md': f'Chapter {i} text.' for i in range(1, 6)}
+        with temp_book_dir(chunks=chunks) as (tmp, _path):
+            for i in range(1, 6):
+                stdout, _ = self.run_cli('print-terms-for-chunk', tmp, f'chunk000{i}.md')
+                self.assertEqual(stdout, '')
+
+    def test_count_frequencies_without_glossary_is_a_noop(self):
+        with temp_book_dir(chunks={'chunk0001.md': 'Alice met the Cat.'}) as (tmp, path):
+            stdout, stderr = self.run_cli('count-frequencies', tmp)
+            self.assertFalse(os.path.exists(path))  # no glossary.json materialized
+        self.assertEqual(stdout, '')
+        self.assertIn('nothing to count', stderr)
+
+    def test_compute_hash_without_glossary_exits_2_with_hint(self):
+        with temp_book_dir() as (tmp, _path):
+            with self.assertRaises(SystemExit) as ctx:
+                self.run_cli('compute-hash', tmp)
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_missing_glossary_still_raises_at_library_level(self):
+        # The CLI gates the expected state; load_glossary keeps its strict
+        # contract for programmatic callers.
+        with temp_book_dir() as (tmp, path):
+            with self.assertRaises(FileNotFoundError):
+                glossary.load_glossary(path)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.17 — glossary CLI survives a missing glossary.json (found in a real run) (2026-11-08)
+
+- **Fixed** `glossary.py` CLI: `print-terms-for-chunk` and `count-frequencies` died with `FileNotFoundError` + exit 1 when `glossary.json` did not exist — although SKILL.md §4 explicitly documents "no glossary" as **empty stdout** ("If stdout is empty (no glossary, or no relevant terms), omit rule #13 from this chunk's prompt entirely"). Found in a real run (2026-11-07, IJCPR article translation): the orchestrator completed conversion (5 chunks), then died at the term-table step — no `output_chunk*.md` was ever produced, i.e. the translation stage never launched. Complementary to v1.2.16's encoding fix (that one fires when a glossary exists; this one when it doesn't). `merge_meta.py` already reports this state as a readable error since the C-07 fix (v1.2.7); the scan commands kept the raw traceback
+- **Behavior**: `print-terms-for-chunk` without a glossary → empty stdout, one stderr note, exit 0 (the documented orchestrator contract); `count-frequencies` without a glossary → no-op with a stderr note, exit 0 (no terms to count, no `glossary.json` materialized); `compute-hash` without a glossary → readable error + hint, exit 2 (mirrors merge_meta.py); `load_glossary()` itself still raises `FileNotFoundError` — only the CLI gates the expected state
+- **Tests**: `MissingGlossaryCliTests` — the empty-stdout/exit-0 contract, the per-chunk loop shape of the real failure (5/5 calls survive), the count-frequencies no-op, the compute-hash exit-2 hint, and the unchanged library-level raise (400 → 405 tests)
+- **Verified**: full suite 405 OK; `ruff check .` green; behavior reproduced on the real run directory that died on 2026-11-07
+
 ## v1.2.16 — UTF-8 CLI output on Windows + universal agent adapter and roadmap (2026-11-07)
 
 - **Fixed** Windows CLI encoding: `glossary.py print-terms-for-chunk` crashed with `UnicodeEncodeError: 'charmap' codec can't encode characters` when stdout was a cp1251/cp866 pipe, because the term table header contains `原文 | 别名 | 译文` (seen on a Windows machine, reproduced in the OpenCode end-to-end run). Added `scripts/_stdio.py` with `configure_utf8_stdio()` and called it from `glossary.py`, `chunk_context.py`, `merge_meta.py`, `run_state.py`, `convert.py` and `merge_and_build.py`. `merge_meta.py apply-merge` also reads stdin as UTF-8, so translated entity names survive the pipe. Console output is now valid UTF-8 on every platform/locale.
