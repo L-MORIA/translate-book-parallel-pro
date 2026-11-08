@@ -303,38 +303,52 @@ def setup_temp_directory(input_file, html_file, images_dir, temp_root=None):
 
 def convert_html_to_markdown(html_file, md_file, strip_page_numbers=False):
     """Convert HTML to Markdown using pandoc"""
+    tmp_dir = None
     try:
         import pypandoc
 
+        # pypandoc globs the source path, and book folders frequently contain
+        # glob metacharacters ('[...]', '{...}' in release names). Such a path
+        # matches nothing and pypandoc crashes; route both paths through a
+        # glob-safe temp directory instead.
+        tmp_dir = tempfile.mkdtemp(prefix='pypandoc-')
+        safe_html = os.path.join(tmp_dir, 'input.html')
+        safe_md = os.path.join(tmp_dir, 'output.md')
+        shutil.copyfile(html_file, safe_html)
+
         pypandoc.convert_file(
-            html_file,
+            safe_html,
             'markdown',
-            outputfile=md_file,
+            outputfile=safe_md,
             extra_args=['--wrap=none']
         )
 
-        if os.path.exists(md_file):
-            with open(md_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-
-            content = content.replace('\ufeff', '')
-            content = content.replace('\u00a0', ' ')
-            content = clean_calibre_markers(content, strip_page_numbers=strip_page_numbers)
-
-            with open(md_file, 'w', encoding='utf-8') as f:
-                f.write(content)
-
-            print(f"Markdown conversion successful: {md_file}")
-            return True
-        else:
+        if not os.path.exists(safe_md):
             print("Markdown file was not created")
             return False
+
+        with open(safe_md, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        content = content.replace('\ufeff', '')
+        content = content.replace('\u00a0', ' ')
+        content = clean_calibre_markers(content, strip_page_numbers=strip_page_numbers)
+
+        os.makedirs(os.path.dirname(os.path.abspath(md_file)), exist_ok=True)
+        with open(md_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        print(f"Markdown conversion successful: {md_file}")
+        return True
     except ImportError:
         print("pypandoc not found. Install with: pip install pypandoc")
         return False
     except Exception as e:
         print(f"HTML to Markdown conversion failed: {e}")
         return False
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 _PAGE_SEQUENCE_MIN_LENGTH = 4

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.2 — convert.py: pandoc conversion survives glob metacharacters in book filenames (found in a real run) (2026-11-08)
+
+- **Fixed** `convert_html_to_markdown()`: pypandoc 1.17's `convert_file()` globs the source path, and libgen-style book folders (`[British Homeopathic Journal 1970-apr ...]{23859776} libgen.li`) contain `[...]`/`{...}` — glob character classes and brace sets. On such a path the glob matches nothing, pypandoc falls back to the single input path and dies with `TypeError: 'WindowsPath' object is not iterable` in `sorted()` (`_convert_input`). Found in a real run (2026-11-08, Pelikan lichens PDF): conversion produced only page-image chunks and the article was untranslatable end to end. The same crash awaits any book whose folder name carries release-name metacharacters
+- **Behavior**: both pandoc paths are now routed through a glob-safe temp dir — `input.html` is copied to `pypandoc-<rand>/input.html`, pandoc writes `pypandoc-<rand>/output.md`, and only after the BOM/nbsp/calibre-marker cleanup does the result land in the real `input.md` (directory created if missing). `Path` args are coerced to `str` (pypandoc 1.17 does not accept `WindowsPath` directly either)
+- **Tests**: `ConvertHtmlToMarkdownTests.test_convert_success_cleans_generated_markdown` now asserts the pandoc input is a `pypandoc-*/input.html` copy, not the original file; full suite 476 OK (1 platform skip); `ruff check .` green
+- **Verified**: the real lichens run completes end to end after the fix (PDF → PyMuPDF extraction → EPUB → chunks → translation → HTML/DOCX/EPUB/PDF)
+
 ## v1.3.1 — CI fixes for the MCP server: Python 3.9 compatibility + deterministic temp-dir pick (2026-11-08)
 
 - **Fixed** `translate_book_mcp.tools.submit_translation`: `Path.write_text(newline=...)` exists only since Python 3.10, and the supported matrix starts at 3.9 — the CI 3.9 leg died with `TypeError: write_text() got an unexpected keyword argument 'newline'` in all four submit-path tests (CI run 42415745738; the Windows dev box runs 3.14 and hid it). Replaced with an explicit `open(..., newline='\n')` — LF endings still keep translated outputs byte-stable across Windows and Linux

@@ -1051,7 +1051,12 @@ class ConvertHtmlToMarkdownTests(unittest.TestCase):
 
         self.assertTrue(ok)
         run.assert_called_once()
-        self.assertEqual(run.call_args.args[0], html_file)
+        # The pandoc input is a glob-safe temp copy (book folders often carry
+        # '[...]'{...}' glob metacharacters that crash pypandoc's globbing).
+        pandoc_input = run.call_args.args[0]
+        self.assertNotEqual(pandoc_input, html_file)
+        self.assertIn("pypandoc-", os.path.dirname(pandoc_input))
+        self.assertTrue(pandoc_input.endswith("input.html"))
         self.assertIn("Markdown conversion successful", out.getvalue())
         self.assertNotIn("﻿", content)
         self.assertNotIn("\u00a0", content)
