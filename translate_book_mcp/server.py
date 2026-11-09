@@ -18,11 +18,11 @@ import urllib.parse
 from pathlib import Path
 
 from . import tools as tool_mod
-from .paths import CHUNK_ID_RE, PathError, Workspace
+from .paths import PathError, Workspace
 
 PROTOCOL_VERSION = '2024-11-05'
 SERVER_NAME = 'translate-book-parallel-pro'
-SERVER_VERSION = '1.3.3'
+SERVER_VERSION = '1.3.4'
 
 MAX_LINE_BYTES = 64 * 1024 * 1024  # a full book never crosses the wire; cap anyway
 
@@ -48,6 +48,7 @@ TOOL_DEFS = [
                 'input_lang': {'type': 'string', 'description': 'source language (default auto)'},
                 'chunk_size': {'type': 'integer', 'description': 'target chunk size in characters'},
                 'temp_root': {'type': 'string', 'description': 'where to create {book}_temp (default workspace root)'},
+                'strip_page_numbers': {'type': 'boolean', 'description': 'pass --strip-page-numbers to convert.py'},
             },
         },
     },
@@ -69,6 +70,7 @@ TOOL_DEFS = [
             'properties': {
                 'temp_dir': {'type': 'string'},
                 'retranslate_untracked': {'type': 'boolean'},
+                'include_chunks': {'type': 'boolean', 'description': 'include the per-chunk detail array (default true)'},
             },
         },
     },
@@ -81,12 +83,14 @@ TOOL_DEFS = [
         ),
         'inputSchema': {
             'type': 'object',
-            'required': ['temp_dir', 'chunk_id', 'target_language'],
+            'required': ['temp_dir', 'chunk_id'],
             'properties': {
                 'temp_dir': {'type': 'string'},
                 'chunk_id': {'type': 'string', 'description': 'chunk0001'},
-                'target_language': {'type': 'string', 'description': 'e.g. Russian'},
+                'target_language': {'type': 'string', 'description': 'e.g. Russian; defaults to config.txt output_lang'},
                 'top_n': {'type': 'integer'},
+                'custom_instructions': {'type': 'string', 'description': 'extra rule #12 for this chunk'},
+                'include_source_text': {'type': 'boolean', 'description': 'include the chunk text in the result (default false)'},
             },
         },
     },
@@ -98,29 +102,31 @@ TOOL_DEFS = [
         ),
         'inputSchema': {
             'type': 'object',
-            'required': ['temp_dir', 'chunk_id', 'content'],
+            'required': ['temp_dir', 'chunk_id'],
             'properties': {
                 'temp_dir': {'type': 'string'},
                 'chunk_id': {'type': 'string'},
-                'content': {'type': 'string', 'description': 'translated markdown text'},
-                'meta': {'type': 'object', 'description': 'output_chunkNNNN.meta.json payload'},
+                'content': {'type': 'string', 'description': 'translated markdown text; provide this or content_path'},
+                'content_path': {'type': 'string', 'description': 'workspace file containing the translated markdown; provide this or content'},
+                'meta': {'type': 'object', 'description': 'output_chunkNNNN.meta.json payload; synthesized empty when omitted'},
+                'record': {'type': 'boolean', 'description': 'record the chunk in run_state.json (default true)'},
             },
         },
     },
     {
         'name': 'merge_meta',
         'description': (
-            'Prepare glossary merge decisions from worker meta files '
-            '(merge_meta.py prepare-merge); apply=true passes a decisions '
-            'object to apply-merge.'
+            'Prepare, apply or inspect glossary merge decisions from worker '
+            'meta files (merge_meta.py prepare-merge/apply-merge/status).'
         ),
         'inputSchema': {
             'type': 'object',
             'required': ['temp_dir'],
             'properties': {
                 'temp_dir': {'type': 'string'},
-                'apply': {'type': 'boolean'},
-                'decisions': {'type': 'object'},
+                'action': {'type': 'string', 'enum': ['prepare', 'apply', 'status'], 'description': 'default prepare; apply requires decisions'},
+                'apply': {'type': 'boolean', 'description': 'legacy shorthand for action=apply'},
+                'decisions': {'type': 'object', 'description': 'full decisions document for action=apply'},
             },
         },
     },
@@ -147,6 +153,10 @@ TOOL_DEFS = [
                 'title': {'type': 'string'},
                 'author': {'type': 'string'},
                 'lang': {'type': 'string'},
+                'cover': {'type': 'string', 'description': 'workspace path to a cover image'},
+                'export_name': {'type': 'string', 'description': 'filename stem for exported aliases'},
+                'cleanup': {'type': 'boolean', 'description': 'remove rebuildable intermediates after a successful build'},
+                'cleanup_translations': {'type': 'boolean', 'description': 'with cleanup, also delete chunk/output files'},
             },
         },
     },
@@ -159,7 +169,7 @@ PROMPT_DEFS = [
         'arguments': [
             {'name': 'temp_dir', 'description': 'temp directory under the workspace', 'required': True},
             {'name': 'chunk_id', 'description': 'chunk0001', 'required': True},
-            {'name': 'target_language', 'description': 'e.g. Russian', 'required': True},
+            {'name': 'target_language', 'description': 'e.g. Russian; defaults to config.txt output_lang', 'required': False},
         ],
     },
     {
@@ -168,7 +178,7 @@ PROMPT_DEFS = [
         'arguments': [
             {'name': 'temp_dir', 'required': True},
             {'name': 'chunk_id', 'required': True},
-            {'name': 'target_language', 'required': True},
+            {'name': 'target_language', 'description': 'defaults to config.txt output_lang', 'required': False},
         ],
     },
 ]
@@ -323,16 +333,7 @@ def _get_prompt(ws, name, arguments):
     if name == 'translate_chunk':
         text = tool_mod.get_chunk_prompt(ws, arguments)['prompt']
     elif name == 'review_translation':
-        temp_dir = str(ws.resolve_dir(arguments.get('temp_dir', '')))
-        chunk_id = arguments.get('chunk_id', '')
-        if not CHUNK_ID_RE.match(chunk_id):
-            raise PathError(f'Expected chunk id like chunk0001, got {chunk_id!r}')
-        lang = arguments.get('target_language', 'ru')
-        text = tool_mod.prompts.build_review_prompt(
-            source_path=str(Path(temp_dir) / f'{chunk_id}.md'),
-            output_path=str(Path(temp_dir) / f'output_{chunk_id}.md'),
-            target_language=lang,
-        )
+        text = tool_mod.review_prompt(ws, arguments)['prompt']
     else:
         raise KeyError(name)
     return {

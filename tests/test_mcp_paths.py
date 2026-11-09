@@ -52,6 +52,27 @@ class WorkspaceConfinementTests(unittest.TestCase):
             link.unlink()
             os.rmdir(outside)
 
+    def test_resolve_file_accepts_inside_and_rejects_escape(self):
+        nested = self.root / 'in'
+        nested.mkdir()
+        book = nested / 'book.epub'
+        book.write_bytes(b'epub')
+        self.assertEqual(
+            self.ws.resolve_file('in/book.epub', must_exist=True), book)
+        self.assertEqual(
+            self.ws.resolve_file(str(book), must_exist=True), book)
+        with self.assertRaises(PathError):
+            self.ws.resolve_file('../book.epub', must_exist=False)
+        with self.assertRaises(PathError):
+            self.ws.resolve_file('in/missing.epub', must_exist=True)
+
+    def test_resolve_file_rejects_absolute_outside_root(self):
+        with tempfile.TemporaryDirectory() as other:
+            outside = Path(other).resolve() / 'book.epub'
+            outside.write_bytes(b'epub')
+            with self.assertRaises(PathError):
+                self.ws.resolve_file(str(outside), must_exist=False)
+
     def test_temp_dir_requires_single_component(self):
         (self.root / 'ok_temp').mkdir()
         self.assertTrue(self.ws.temp_dir('ok_temp').is_dir())

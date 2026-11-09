@@ -150,7 +150,9 @@ adapters are the intermediate steps.
 
 The **MCP server MVP is implemented (v1.3.0)** — stdio, stdlib-only JSON-RPC,
 no SDK dependency. Transport hardening, resource templates and a live OpenCode
-V2 verification landed in v1.3.3:
+V2 verification landed in v1.3.3; v1.3.4 brought the tools to CLI feature
+parity (atomic submits, `content_path`, strict meta, `merge_meta` actions,
+build/convert options and richer status):
 
 ```bash
 python scripts/mcp_server.py --workspace /path/to/books

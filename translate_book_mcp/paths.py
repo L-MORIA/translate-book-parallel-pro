@@ -70,6 +70,24 @@ class Workspace:
         resolved = (self.root / temp_id).resolve()
         return self._require_inside(resolved)
 
+    def resolve_file(self, rel_file, must_exist=False, label='file'):
+        """Resolve a file path inside the workspace.
+
+        Unlike :meth:`resolve_dir` this is for arbitrary input files (book
+        sources, ``content_path`` hand-off files, cover images). The final
+        component is not restricted to a chunk name; containment is enforced
+        after ``realpath``, so symlinks cannot escape the root.
+        """
+        if not rel_file or not str(rel_file).strip():
+            raise PathError(f"{label} must be a non-empty path")
+        candidate = Path(rel_file)
+        resolved = candidate.resolve() if candidate.is_absolute() \
+            else (self.root / candidate).resolve()
+        self._require_inside(resolved)
+        if must_exist and not resolved.is_file():
+            raise PathError(f"{label} not found or not a file: {resolved}")
+        return resolved
+
     def chunk_file(self, temp_dir, name, kind='source'):
         """Resolve `chunkNNNN.md` / `output_chunkNNNN.md` /
         `output_chunkNNNN.meta.json` inside a temp dir."""

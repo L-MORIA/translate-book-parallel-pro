@@ -191,7 +191,7 @@ class ValidateBookTests(ToolsTestCase):
 
 class ConvertBookTests(ToolsTestCase):
     def test_success_returns_temp_dir_and_chunk_count(self):
-        def fake_run(script, *argv, cwd=None):
+        def fake_run(script, *argv, cwd=None, input_text=None, timeout=None):
             self.assertEqual(script, 'convert.py')
             self.assertIn('--olang', argv)
             self.assertIn('ru', argv)
@@ -259,7 +259,7 @@ class BuildBookTests(ToolsTestCase):
 
         captured = {}
 
-        def fake_run(script, *argv, cwd=None):
+        def fake_run(script, *argv, cwd=None, input_text=None, timeout=None):
             captured['argv'] = argv
             self.assertEqual(script, 'merge_and_build.py')
             self.assertIn(str(self.book.temp), argv)
@@ -311,6 +311,379 @@ class MergeMetaTests(ToolsTestCase):
                 })
 
 
+class ConvertBookOptionsTests(ToolsTestCase):
+    def _fixture(self, lang='ru'):
+        (self.root / 'newbook_temp').mkdir()
+        (self.root / 'newbook_temp' / 'chunk0001.md').write_text(
+            'source', encoding='utf-8')
+        manifest.create_manifest(
+            str(self.root / 'newbook_temp'), ['chunk0001.md'],
+            str(self.root / 'input.md'),
+        )
+        (self.root / 'newbook_temp' / 'config.txt').write_text(
+            f'output_lang={lang}\n', encoding='utf-8')
+        src = self.root / 'book.epub'
+        src.write_bytes(b'epub')
+        return src
+
+    def test_strip_page_numbers_and_chunk_ids_are_reported(self):
+        src = self._fixture()
+        captured = {}
+
+        def fake_run(script, *argv, cwd=None, input_text=None, timeout=None):
+            captured['argv'] = argv
+            return 0, f'Temp directory: {self.root / "newbook_temp"}', ''
+
+        with mock.patch.object(tools, '_run_python', side_effect=fake_run):
+            result = tools.convert_book(self.ws, {
+                'input_file': str(src), 'output_lang': 'ru',
+                'strip_page_numbers': True,
+            })
+        self.assertIn('--strip-page-numbers', captured['argv'])
+        self.assertEqual(result['chunk_ids'], ['chunk0001'])
+        self.assertEqual(result['output_lang'], 'ru')
+
+    def test_chunk_size_and_extension_are_validated(self):
+        src = self._fixture()
+        for bad in (100, 1_000_001, True, 'abc'):
+            with self.assertRaises(tools.ToolError, msg=repr(bad)):
+                tools.convert_book(self.ws, {
+                    'input_file': str(src), 'chunk_size': bad,
+                })
+        txt = self.root / 'book.txt'
+        txt.write_text('not a book', encoding='utf-8')
+        with self.assertRaises(tools.ToolError):
+            tools.convert_book(self.ws, {'input_file': str(txt)})
+
+    def test_temp_root_is_created(self):
+        src = self._fixture()
+        out_root = self.root / 'nested' / 'out'
+        temp = out_root / 'newbook_temp'
+        temp.mkdir(parents=True)
+        (temp / 'chunk0001.md').write_text('source', encoding='utf-8')
+        manifest.create_manifest(
+            str(temp), ['chunk0001.md'], str(temp / 'input.md'))
+
+        def fake_run(script, *argv, cwd=None, input_text=None, timeout=None):
+            return 0, f'Temp directory: {temp}', ''
+
+        with mock.patch.object(tools, '_run_python', side_effect=fake_run):
+            result = tools.convert_book(self.ws, {
+                'input_file': str(src), 'temp_root': str(out_root),
+            })
+        self.assertEqual(result['temp_id'], 'newbook_temp')
+
+
+class GetChunkPromptOptionsTests(ToolsTestCase):
+    def test_language_code_uses_config_fallback_and_is_mapped(self):
+        (self.book.temp / 'config.txt').write_text(
+            'output_lang=ru\n', encoding='utf-8')
+        result = tools.get_chunk_prompt(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+        })
+        self.assertEqual(result['target_language_input'], 'ru')
+        self.assertEqual(result['target_language'], 'Russian')
+        self.assertIn('на Russian', result['prompt'])
+
+    def test_custom_instructions_and_glossary_numbering(self):
+        (self.book.temp / 'glossary.json').write_text(
+            json.dumps(_glossary(('Alice', 'Алиса'))), encoding='utf-8')
+        result = tools.get_chunk_prompt(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+            'target_language': 'ru',
+            'custom_instructions': 'Keep footnotes verbatim',
+        })
+        self.assertIn('12. Keep footnotes verbatim', result['prompt'])
+        self.assertIn('13. Единообразие терминов', result['prompt'])
+        self.assertTrue(result['selected_term_ids'])
+        self.assertEqual(len(result['glossary_hash']), 64)
+
+    def test_source_text_and_metadata_are_optional(self):
+        result = tools.get_chunk_prompt(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+            'target_language': 'Russian', 'include_source_text': True,
+        })
+        self.assertIn('Alice', result['source_text'])
+        self.assertEqual(len(result['source_sha256']), 64)
+        self.assertEqual(result['char_count'], len(result['source_text']))
+        self.assertIn('schema_version', result['meta_schema'])
+        self.assertNotIn('Markdown source text:', result['prompt'])
+
+    def test_invalid_top_n_is_rejected(self):
+        (self.book.temp / 'glossary.json').write_text(
+            json.dumps(_glossary(('Alice', 'Алиса'))), encoding='utf-8')
+        with self.assertRaises(tools.ToolError):
+            tools.get_chunk_prompt(self.ws, {
+                'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+                'target_language': 'ru', 'top_n': 'many',
+            })
+
+
+class SubmitTranslationOptionsTests(ToolsTestCase):
+    def test_content_path_writes_output_synthetic_meta_and_records(self):
+        handoff = self.root / 'handoff.md'
+        handoff.write_text('Перевод через файл.', encoding='utf-8')
+        result = tools.submit_translation(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+            'content_path': str(handoff),
+        })
+        self.assertEqual(
+            (self.book.temp / 'output_chunk0001.md').read_text(encoding='utf-8'),
+            'Перевод через файл.',
+        )
+        self.assertTrue(result['meta_synthetic'])
+        self.assertTrue(result['recorded'])
+        meta = json.loads(
+            (self.book.temp / 'output_chunk0001.meta.json').read_text(
+                encoding='utf-8'))
+        self.assertEqual(meta['schema_version'], 1)
+        plan = tools.get_translation_plan(
+            self.ws, {'temp_dir': str(self.book.temp)})
+        self.assertNotIn('chunk0001', plan['translation_chunk_ids'])
+        self.assertNotIn('chunk0001', plan['record_only_chunk_ids'])
+
+    def test_content_and_content_path_are_mutually_exclusive(self):
+        handoff = self.root / 'handoff.md'
+        handoff.write_text('text', encoding='utf-8')
+        with self.assertRaises(tools.ToolError):
+            tools.submit_translation(self.ws, {
+                'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+                'content': 'text', 'content_path': str(handoff),
+            })
+
+    def test_content_path_cannot_be_the_source_chunk(self):
+        with self.assertRaises(tools.ToolError):
+            tools.submit_translation(self.ws, {
+                'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+                'content_path': str(self.book.temp / 'chunk0001.md'),
+            })
+
+    def test_nul_and_oversize_content_are_rejected(self):
+        with self.assertRaises(tools.ToolError):
+            tools.submit_translation(self.ws, {
+                'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+                'content': 'bad\x00text',
+            })
+        with mock.patch.object(tools, 'MAX_TRANSLATION_CHARS', 10):
+            with self.assertRaises(tools.ToolError):
+                tools.submit_translation(self.ws, {
+                    'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+                    'content': 'x' * 11,
+                })
+
+    def test_meta_schema_is_validated_strictly(self):
+        with self.assertRaises(tools.ToolError):
+            tools.submit_translation(self.ws, {
+                'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+                'content': 'text', 'meta': {'schema_version': 1,
+                                            'new_entities': 'bad'},
+            })
+
+    def test_record_false_leaves_chunk_in_record_only_plan(self):
+        result = tools.submit_translation(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+            'content': 'Перевод без записи в run_state.', 'record': False,
+        })
+        self.assertFalse(result['recorded'])
+        plan = tools.get_translation_plan(
+            self.ws, {'temp_dir': str(self.book.temp)})
+        self.assertIn('chunk0001', plan['record_only_chunk_ids'])
+
+    def test_existing_meta_is_preserved_when_meta_is_omitted(self):
+        meta = {
+            'schema_version': 1, 'new_entities': [], 'alias_hypotheses': [],
+            'attribute_hypotheses': [], 'used_term_sources': [], 'conflicts': [],
+        }
+        meta_path = self.book.temp / 'output_chunk0001.meta.json'
+        meta_path.write_text(json.dumps(meta), encoding='utf-8')
+        result = tools.submit_translation(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+            'content': 'text',
+        })
+        self.assertFalse(result['meta_written'])
+        self.assertFalse(result['meta_synthetic'])
+        self.assertEqual(json.loads(meta_path.read_text(encoding='utf-8')), meta)
+
+    def test_atomic_write_leaves_no_temp_files(self):
+        tools.submit_translation(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+            'content': 'text',
+        })
+        self.assertEqual(list(self.book.temp.glob('.mcp-*.tmp')), [])
+
+
+class GetStatusOptionsTests(ToolsTestCase):
+    def test_status_reports_config_chunks_glossary_meta_and_outputs(self):
+        (self.book.temp / 'config.txt').write_text(
+            'output_lang=ru\n', encoding='utf-8')
+        (self.book.temp / 'output_chunk0001.md').write_text(
+            'перевод', encoding='utf-8')
+        (self.book.temp / 'output_chunk0001.meta.json').write_text(
+            json.dumps({
+                'schema_version': 1, 'new_entities': [],
+                'alias_hypotheses': [], 'attribute_hypotheses': [],
+                'used_term_sources': [], 'conflicts': [],
+            }), encoding='utf-8')
+        (self.book.temp / 'glossary.json').write_text(
+            json.dumps(_glossary(('Alice', 'Алиса'))), encoding='utf-8')
+        (self.book.temp / 'book.html').write_text('<html>', encoding='utf-8')
+
+        status = tools.get_status(self.ws, {'temp_dir': str(self.book.temp)})
+        self.assertEqual(status['config']['output_lang'], 'ru')
+        self.assertEqual(status['chunks']['total'], 2)
+        self.assertEqual(status['chunks']['translated'], 1)
+        self.assertIn('chunk0002', status['chunks']['missing_output_chunk_ids'])
+        self.assertEqual(status['outputs_present'], 1)
+        self.assertTrue(status['glossary']['present'])
+        self.assertEqual(status['glossary']['term_count'], 1)
+        self.assertEqual(len(status['glossary']['hash']), 64)
+        self.assertEqual(status['meta']['status']['meta_files_found'], 1)
+        self.assertIn('book.html', [o['file'] for o in status['outputs']])
+        self.assertIsInstance(status['logs'], list)
+
+    def test_corrupt_manifest_is_reported_not_fatal(self):
+        (self.book.temp / 'manifest.json').write_text('{bad', encoding='utf-8')
+        status = tools.get_status(self.ws, {'temp_dir': str(self.book.temp)})
+        self.assertTrue(status['manifest']['exists'])
+        self.assertTrue(status['manifest']['error'])
+        self.assertEqual(status['chunks']['total'], 0)
+
+    def test_no_glossary_skips_meta_status(self):
+        status = tools.get_status(self.ws, {'temp_dir': str(self.book.temp)})
+        self.assertFalse(status['glossary']['present'])
+        self.assertIsNone(status['meta']['status'])
+
+
+class GetTranslationPlanOptionsTests(ToolsTestCase):
+    def test_include_chunks_false_and_next_chunk_id(self):
+        plan = tools.get_translation_plan(self.ws, {
+            'temp_dir': str(self.book.temp), 'include_chunks': False,
+        })
+        self.assertNotIn('chunks', plan)
+        self.assertEqual(plan['next_chunk_id'], 'chunk0001')
+
+    def test_next_chunk_id_moves_after_submit(self):
+        tools.submit_translation(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+            'content': 'перевод',
+        })
+        plan = tools.get_translation_plan(
+            self.ws, {'temp_dir': str(self.book.temp)})
+        self.assertEqual(plan['next_chunk_id'], 'chunk0002')
+
+
+class MergeMetaOptionsTests(ToolsTestCase):
+    def test_status_action_returns_report(self):
+        report = {'translated_chunks': 0, 'meta_files_found': 0}
+        with mock.patch.object(
+            tools, '_run_python',
+            return_value=(0, json.dumps(report), ''),
+        ):
+            result = tools.merge_meta(self.ws, {
+                'temp_dir': str(self.book.temp), 'action': 'status',
+            })
+        self.assertEqual(result['action'], 'status')
+        self.assertEqual(result['report'], report)
+
+    def test_apply_action_sends_decisions_on_stdin(self):
+        (self.book.temp / 'glossary.json').write_text(
+            json.dumps(_glossary(('Alice', 'Алиса'))), encoding='utf-8')
+        decisions = {'decisions': [], 'auto_apply': []}
+        captured = {}
+
+        def fake_run(script, *argv, cwd=None, input_text=None, timeout=None):
+            captured['argv'] = argv
+            captured['input'] = input_text
+            return 0, json.dumps({'applied': 0}), ''
+
+        with mock.patch.object(tools, '_run_python', side_effect=fake_run):
+            result = tools.merge_meta(self.ws, {
+                'temp_dir': str(self.book.temp), 'action': 'apply',
+                'decisions': decisions,
+            })
+        self.assertIn('apply-merge', captured['argv'])
+        self.assertEqual(json.loads(captured['input']), decisions)
+        self.assertTrue(result['applied'])
+
+    def test_decisions_size_limit(self):
+        (self.book.temp / 'glossary.json').write_text(
+            json.dumps(_glossary(('Alice', 'Алиса'))), encoding='utf-8')
+        with mock.patch.object(tools, 'MAX_DECISIONS_BYTES', 5):
+            with self.assertRaises(tools.ToolError):
+                tools.merge_meta(self.ws, {
+                    'temp_dir': str(self.book.temp), 'action': 'apply',
+                    'decisions': {'decisions': []},
+                })
+
+    def test_invalid_action_rejected(self):
+        with self.assertRaises(tools.ToolError):
+            tools.merge_meta(self.ws, {
+                'temp_dir': str(self.book.temp), 'action': 'explode',
+            })
+
+
+class BuildBookOptionsTests(ToolsTestCase):
+    def test_cover_export_and_cleanup_flags(self):
+        (self.book.temp / 'output_chunk0001.md').write_text('п1', encoding='utf-8')
+        (self.book.temp / 'output_chunk0002.md').write_text('п2', encoding='utf-8')
+        (self.book.temp / 'output.md').write_text('# book', encoding='utf-8')
+        (self.book.temp / 'book_doc.html').write_text('<html>', encoding='utf-8')
+        cover = self.root / 'cover.png'
+        cover.write_bytes(b'\x89PNG')
+        captured = {}
+
+        def fake_run(script, *argv, cwd=None, input_text=None, timeout=None):
+            captured['argv'] = argv
+            return 0, 'Build Complete', ''
+
+        with mock.patch.object(tools, '_run_python', side_effect=fake_run):
+            result = tools.build_book(self.ws, {
+                'temp_dir': str(self.book.temp), 'cover': str(cover),
+                'export_name': 'alice-ru', 'cleanup': True,
+                'cleanup_translations': True,
+            })
+        self.assertIn('--cover', captured['argv'])
+        self.assertIn(str(cover), captured['argv'])
+        self.assertIn('--export-name', captured['argv'])
+        self.assertIn('alice-ru', captured['argv'])
+        self.assertIn('--cleanup', captured['argv'])
+        self.assertIn('--cleanup-translations', captured['argv'])
+        self.assertIn('output.md', [a['file'] for a in result['artifacts']])
+
+    def test_cleanup_translations_requires_cleanup(self):
+        with self.assertRaises(tools.ToolError):
+            tools.build_book(self.ws, {
+                'temp_dir': str(self.book.temp),
+                'cleanup_translations': True,
+            })
+
+    def test_cover_outside_workspace_is_rejected(self):
+        with tempfile.TemporaryDirectory() as other:
+            cover = Path(other) / 'cover.png'
+            cover.write_bytes(b'png')
+            with self.assertRaises(PathError):
+                tools.build_book(self.ws, {
+                    'temp_dir': str(self.book.temp), 'cover': str(cover),
+                })
+
+
+class ReviewPromptOptionsTests(ToolsTestCase):
+    def test_review_prompt_uses_config_language(self):
+        (self.book.temp / 'config.txt').write_text(
+            'output_lang=ru\n', encoding='utf-8')
+        result = tools.review_prompt(self.ws, {
+            'temp_dir': str(self.book.temp), 'chunk_id': 'chunk0001',
+        })
+        self.assertEqual(result['target_language'], 'Russian')
+        self.assertIn('Проверьте перевод', result['prompt'])
+
+    def test_review_prompt_rejects_bad_chunk_id(self):
+        with self.assertRaises(PathError):
+            tools.review_prompt(self.ws, {
+                'temp_dir': str(self.book.temp), 'chunk_id': 'chunk1',
+            })
+
+
 class PromptTests(unittest.TestCase):
     def test_ru_template_selected_for_russian(self):
         p = prompts.build_chunk_prompt('a.md', 'b.md', 'c.json', 'Russian')
@@ -342,6 +715,32 @@ class PromptTests(unittest.TestCase):
             neighbor_context='Next chunk excerpt (chunk0002.md, read-only):\n```text\n…\n```',
             **base)
         self.assertIn('Контекст соседних фрагментов', with_ctx)
+
+    def test_language_codes_are_mapped_to_names(self):
+        self.assertEqual(prompts.language_name('ru'), 'Russian')
+        self.assertEqual(prompts.language_name('ZH'), 'Chinese')
+        self.assertEqual(prompts.language_name('klingon'), 'klingon')
+        self.assertEqual(prompts.language_name(''), 'Chinese')
+        self.assertTrue(prompts.is_russian('русский'))
+        self.assertFalse(prompts.is_russian('en'))
+        p = prompts.build_chunk_prompt(
+            'a.md', 'b.md', 'c.json', 'ru', term_table='')
+        self.assertIn('на Russian', p)
+
+    def test_custom_instructions_become_rule_12(self):
+        p = prompts.build_chunk_prompt(
+            'a.md', 'b.md', 'c.json', 'ru',
+            custom_instructions='Keep footnotes verbatim',
+        )
+        self.assertIn('12. Keep footnotes verbatim', p)
+        self.assertNotIn('13.', p)
+
+    def test_meta_schema_template_covers_all_arrays(self):
+        schema = prompts.meta_schema_template()
+        self.assertEqual(schema['schema_version'], 1)
+        for key in ('new_entities', 'alias_hypotheses',
+                    'attribute_hypotheses', 'used_term_sources', 'conflicts'):
+            self.assertIn(key, schema)
 
 
 class PromptSyncTests(unittest.TestCase):

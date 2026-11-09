@@ -11,6 +11,48 @@ test_mcp_tools.py::PromptSyncTests guards the most load-bearing phrases
 against drift between the two files.
 """
 
+LANGUAGE_NAMES = {
+    'ar': 'Arabic',
+    'de': 'German',
+    'en': 'English',
+    'es': 'Spanish',
+    'fr': 'French',
+    'hi': 'Hindi',
+    'it': 'Italian',
+    'ja': 'Japanese',
+    'ko': 'Korean',
+    'nl': 'Dutch',
+    'pl': 'Polish',
+    'pt': 'Portuguese',
+    'ru': 'Russian',
+    'tr': 'Turkish',
+    'uk': 'Ukrainian',
+    'zh': 'Chinese',
+}
+
+
+def language_name(value):
+    """Turn a language code into a prompt-friendly name.
+
+    Full names pass through unchanged; unknown codes are returned as-is so a
+    host can use a custom language without a code change. An empty value
+    defaults to Chinese, matching ``convert.py --olang``.
+    """
+    if value is None:
+        return 'Chinese'
+    text = str(value).strip()
+    if not text:
+        return 'Chinese'
+    return LANGUAGE_NAMES.get(text.lower(), text)
+
+
+def is_russian(value):
+    if value is None:
+        return False
+    text = str(value).strip().lower()
+    return text in ('ru', 'rus', 'russian', 'русский')
+
+
 RU_RULES = """1. Строго сохраняйте Markdown-разметку: заголовки, ссылки, изображения
 2. Переводите только текст, не трогайте Markdown-синтаксис и имена файлов
 3. Удаляйте пустые ссылки, лишние символы и знаки `\\` в конце строк. Номера страниц уже обработаны convert.py — не удаляйте отдельные цифровые строки (годы 1984, номера глав, номера ссылок и т.д.)
@@ -78,7 +120,6 @@ TEMPLATES = {
         'meta': META_NOTE_RU,
         'rule13': RULE13_HEADER_RU,
         'neighbor': NEIGHBOR_HEADER_RU,
-        'source_header': "Текст markdown-файла:",
     },
     'generic': {
         'rules': GENERIC_RULES,
@@ -90,19 +131,51 @@ TEMPLATES = {
         'meta': META_NOTE_GENERIC,
         'rule13': RULE13_HEADER_GENERIC,
         'neighbor': NEIGHBOR_HEADER_GENERIC,
-        'source_header': "Markdown source text:",
     },
 }
 
 
 def _template_for(target_language):
-    """Pick the template by target language; 'ru' gets the Russian template."""
-    lang = (target_language or '').strip().lower()
-    return TEMPLATES['ru'] if lang.startswith('ru') else TEMPLATES['generic']
+    """Pick the template by target language; Russian gets the RU template."""
+    return TEMPLATES['ru'] if is_russian(target_language) else TEMPLATES['generic']
+
+
+def meta_schema_template():
+    """The observation schema injected into every worker prompt/result."""
+    return {
+        'schema_version': 1,
+        'new_entities': [{
+            'source': 'Taig',
+            'target_proposal': 'Тэг',
+            'category': 'person',
+            'evidence': '<=200-char quote from the chunk',
+        }],
+        'alias_hypotheses': [{
+            'variant': 'Taig',
+            'may_be_alias_of_source': 'Tai',
+            'evidence': '<=200-char quote',
+        }],
+        'attribute_hypotheses': [{
+            'entity_source': 'Tai',
+            'attribute': 'gender',
+            'value': 'male',
+            'confidence': 'high',
+            'evidence': '<=200-char quote',
+        }],
+        'used_term_sources': ['Tai', 'Manhattan'],
+        'conflicts': [{
+            'entity_source': 'Tai',
+            'field': 'target',
+            'injected': 'Тай',
+            'observed_better': 'Тай-и',
+            'evidence': '<=200-char quote',
+        }],
+    }
 
 
 def build_chunk_prompt(source_path, output_path, meta_path, target_language,
-                       term_table='', neighbor_context=''):
+                       term_table='', neighbor_context='',
+                       custom_instructions=''):
     """Assemble the full per-chunk translation prompt.
 
     `term_table` is the 3-column markdown table from
@@ -110,22 +183,25 @@ def build_chunk_prompt(source_path, output_path, meta_path, target_language,
     relevant terms, and rule #13 is omitted entirely (SKILL.md contract).
     `neighbor_context` is the rendered block from
     `chunk_context.format_for_prompt()` — omitted when empty.
+    `custom_instructions` becomes rule #12 when non-empty.
     """
     tpl = _template_for(target_language)
+    language = language_name(target_language)
     parts = [
         tpl['task'].format(source_path=source_path, output_path=output_path,
-                           target_language=target_language),
+                           target_language=language),
         "ВАЖНЫЕ ТРЕБОВАНИЯ:" if tpl is TEMPLATES['ru'] else "REQUIREMENTS:",
         tpl['rules'],
         tpl['meta'].format(meta_path=meta_path),
     ]
+    if custom_instructions and custom_instructions.strip():
+        parts.append(f"12. {custom_instructions.strip()}")
     if term_table:
         parts.append(tpl['rule13'])
         parts.append(term_table)
     if neighbor_context:
         parts.append(tpl['neighbor'])
         parts.append(neighbor_context)
-    parts.append(tpl['source_header'])
     return '\n\n'.join(parts)
 
 
@@ -145,9 +221,8 @@ REVIEW_PROMPT_GENERIC = (
 
 
 def build_review_prompt(source_path, output_path, target_language):
-    lang = (target_language or '').strip().lower()
-    template = REVIEW_PROMPT_RU if lang.startswith('ru') else REVIEW_PROMPT_GENERIC
+    template = REVIEW_PROMPT_RU if is_russian(target_language) else REVIEW_PROMPT_GENERIC
     return template.format(
         source_path=source_path, output_path=output_path,
-        target_language=target_language,
+        target_language=language_name(target_language),
     )

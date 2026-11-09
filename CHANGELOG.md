@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.3.4 — MCP tools catch up with the CLI/prototype feature set (2026-11-09)
+
+- **Changed** `submit_translation` is now safe for long-running parallel runs: writes are atomic (`tempfile` + `os.replace`), content with a NUL byte, whitespace-only content and payloads over 5,000,000 characters are rejected, and a 20%-of-source length check returns a warning. Successful writes are recorded in `run_state.json` (opt out with `record=false`), so `get_translation_plan` stops reporting the chunk as "record only". A module-level lock serializes output/meta/state writes
+- **Added** `submit_translation.content_path` — the translated markdown can be read from a workspace file instead of being sent through JSON-RPC. `content` and `content_path` are mutually exclusive; pointing at the source chunk is rejected
+- **Added** synthetic empty meta: when `meta` is omitted and no `output_chunkNNNN.meta.json` exists, an empty observation file is written so the merge step has a complete meta set. An existing meta file is preserved, and a supplied `meta` object is validated strictly through `scripts/meta.py`
+- **Added** `get_chunk_prompt` metadata: `source_sha256`, `char_count`, `glossary_hash`, `selected_term_ids`, `term_table_present`, `neighbor_context_present`, `meta_schema`, `target_language_input` and optional `source_text` (`include_source_text=true`). `target_language` now maps codes (`ru` → `Russian`) and falls back to `config.txt` `output_lang`, then `zh`; the schema no longer requires `target_language`. `custom_instructions` becomes rule 12 ahead of glossary rule 13
+- **Fixed** the prompt no longer ends with a dangling `Markdown source text:` / `Текст markdown-файла:` header; the host reads the chunk from `source_path`
+- **Added** `get_translation_plan.include_chunks` (default true) and `next_chunk_id` for simple orchestrators
+- **Added** `merge_meta.action=prepare|apply|status`; `apply=true` remains a shorthand for `action=apply`, decisions are sent over stdin and capped at 10 MB. `status` runs `merge_meta.py status` and returns its report
+- **Added** `build_book` options `cover`, `export_name`, `cleanup` and `cleanup_translations` (the last requires `cleanup=true`); cover paths are confined to the workspace
+- **Added** `convert_book` options `strip_page_numbers` and `chunk_size` (500–1,000,000 characters), extension validation, automatic `temp_root` creation, and `chunk_ids` / `output_lang` in the result
+- **Added** `get_status` now reports parsed `config`, per-chunk translated/missing/empty counts, glossary summary (term count, version, hash), artifact list, and `merge_meta.py status` when a glossary or meta files exist. Corrupt run_state/manifest is reported instead of aborting the call
+- **Added** configurable subprocess timeouts (`TRANSLATE_BOOK_MCP_CONVERT_TIMEOUT`, default 30 min; `TRANSLATE_BOOK_MCP_BUILD_TIMEOUT`, default 60 min; 1800 s for other scripts) and `_trim_logs` to keep tool responses inside a JSON-RPC frame
+- **Added** `Workspace.resolve_file()` for input books, `content_path` hand-off files and cover images with the same realpath confinement as directories
+- **Changed** `review_translation` now resolves its language from `config.txt` and reuses the shared `review_prompt` helper instead of a duplicated path/validation branch
+- **Tests**: +32 tool tests, +3 server tests and +2 path tests for the new behavior; full suite 523 tests green, `ruff check .` green
+
 ## v1.3.3 — MCP transport hardening after the first live OpenCode V2 run (2026-11-09)
 
 - **Fixed** JSON-RPC framing: every response now carries `"jsonrpc": "2.0"`. The hand-rolled stdio loop omitted the marker; OpenCode V2 rejected every frame with `Invalid MCP stdio message`, so no tool ever reached the model. Found in the first live OpenCode V2.2.6 run (2026-11-09). Regression test: `test_every_response_carries_jsonrpc_2_0`

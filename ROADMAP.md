@@ -6,7 +6,7 @@ One pipeline, any agent: OpenCode, Hermes, Claude Code, Codex, ZCode, MiniMax
 Code, Kimi, Cursor, plain CI. No forks of the translation logic, no duplicated
 prompt files, no per-host copy of the pipeline.
 
-## Current state (v1.3.3)
+## Current state (v1.3.4)
 
 - The core is portable: `scripts/*.py` is plain Python; prompts, glossary,
   manifest, run_state and meta schemas are host-independent.
@@ -29,6 +29,16 @@ prompt files, no per-host copy of the pipeline.
   `resources/templates/list` is implemented, nested temp dirs are discoverable
   and readable through resources, and `convert_book` defaults to the same
   target language as `convert.py` (`zh`).
+
+- **MCP tools reached CLI feature parity (v1.3.4)**: `submit_translation`
+  writes atomically, enforces content limits, accepts `content_path`, synthesizes
+  empty meta and records `run_state`; `get_chunk_prompt` returns full metadata
+  and supports custom instructions; `merge_meta` gained `prepare/apply/status`;
+  `build_book` and `convert_book` expose cover/export/cleanup and
+  page-number/chunk-size options; `get_status` reports config, per-chunk
+  coverage, glossary and meta merge state. This closes the gap between the MCP
+  server and the long-standing CLI/prototype behavior before the v1.4.0
+  orchestrator work
 
 The remaining problem is integration, not translation. Every host still needs
 its own glue: a skill file, a sub-agent call, a batch size. The roadmap removes
@@ -206,6 +216,7 @@ python scripts/translate_cli_workers.py --temp-dir <dir> \
 | **v1.2.17** | glossary CLI survives a missing glossary.json (found in a real run) |
 | **v1.3.0** ✅ | MCP server MVP (stdio, M1–M3), stdlib JSON-RPC, workspace confinement, 56 tests |
 | **v1.3.3** ✅ | MCP transport hardening: JSON-RPC marker, UTF-8 stdin, resource templates, nested temp resources; live OpenCode V2 run |
+| **v1.3.4** ✅ | MCP tools reach CLI/prototype parity: atomic submit, `content_path`, synthetic/strict meta, run_state recording, prompt/plan/status metadata, merge_meta actions, build/convert options |
 | **v1.4.0** | Headless orchestrator, install script, adapter files |
 | **v1.5.0** | MCP HTTP transport, auth, Docker image |
 | **v2.0.0** | Unified CLI + MCP + all adapters, stable public tool schema |

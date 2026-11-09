@@ -130,6 +130,36 @@ class ServerTestCase(unittest.TestCase):
             self.assertIn('inputSchema', tool)
             self.assertIn('description', tool)
 
+    def test_tools_list_documents_ported_options(self):
+        resp = self.one(self.rpc(30, 'tools/list'))
+        tools = {t['name']: t for t in resp['result']['tools']}
+        self.assertIn('strip_page_numbers',
+                      tools['convert_book']['inputSchema']['properties'])
+        self.assertIn('include_chunks',
+                      tools['get_translation_plan']['inputSchema']['properties'])
+        self.assertIn('custom_instructions',
+                      tools['get_chunk_prompt']['inputSchema']['properties'])
+        self.assertIn('content_path',
+                      tools['submit_translation']['inputSchema']['properties'])
+        self.assertIn('action',
+                      tools['merge_meta']['inputSchema']['properties'])
+        self.assertIn('cover',
+                      tools['build_book']['inputSchema']['properties'])
+
+    def test_tools_call_submit_with_content_path(self):
+        handoff = self.root / 'handoff.md'
+        handoff.write_text('Перевод из файла.', encoding='utf-8')
+        resp = self.one(self.rpc(31, 'tools/call', {
+            'name': 'submit_translation',
+            'arguments': {
+                'temp_dir': str(self.book), 'chunk_id': 'chunk0001',
+                'content_path': str(handoff),
+            },
+        }))
+        payload = json.loads(resp['result']['content'][0]['text'])
+        self.assertTrue(payload['meta_synthetic'])
+        self.assertTrue(payload['recorded'])
+
     def test_tools_call_get_status(self):
         resp = self.one(self.rpc(4, 'tools/call', {
             'name': 'get_status',
@@ -259,6 +289,9 @@ class ServerTestCase(unittest.TestCase):
         listing = self.one(self.rpc(18, 'prompts/list'))
         names = [p['name'] for p in listing['result']['prompts']]
         self.assertEqual(names, ['translate_chunk', 'review_translation'])
+        for prompt in listing['result']['prompts']:
+            args = {a['name']: a for a in prompt['arguments']}
+            self.assertFalse(args['target_language'].get('required', False))
 
         got = self.one(self.rpc(19, 'prompts/get', {
             'name': 'translate_chunk',
@@ -268,6 +301,15 @@ class ServerTestCase(unittest.TestCase):
         message = got['result']['messages'][0]
         self.assertEqual(message['role'], 'user')
         self.assertIn('Переведите файл-источник', message['content']['text'])
+
+    def test_prompts_get_falls_back_to_config_language(self):
+        (self.book / 'config.txt').write_text('output_lang=ru\n', encoding='utf-8')
+        got = self.one(self.rpc(21, 'prompts/get', {
+            'name': 'translate_chunk',
+            'arguments': {'temp_dir': str(self.book), 'chunk_id': 'chunk0001'},
+        }))
+        text = got['result']['messages'][0]['content']['text']
+        self.assertIn('на Russian', text)
 
     def test_prompts_get_unknown_name(self):
         resp = self.one(self.rpc(20, 'prompts/get', {'name': 'nope'}))
