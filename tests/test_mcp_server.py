@@ -54,6 +54,16 @@ class ServerTestCase(unittest.TestCase):
 
     # -- lifecycle ----------------------------------------------------------
 
+    def test_every_response_carries_jsonrpc_2_0(self):
+        responses = self.converse(
+            self.rpc(1, 'initialize', {'protocolVersion': '2024-11-05'}),
+            self.rpc(2, 'tools/list'),
+            self.rpc(3, 'does/not/exist'),
+        )
+        self.assertEqual(len(responses), 3)
+        for resp in responses:
+            self.assertEqual(resp.get('jsonrpc'), '2.0', resp)
+
     def test_initialize_echoes_client_protocol_version(self):
         resp = self.one(self.rpc(1, 'initialize', {
             'protocolVersion': '2024-11-05',
@@ -171,16 +181,41 @@ class ServerTestCase(unittest.TestCase):
 
     # -- resources ----------------------------------------------------------
 
+    def test_resources_templates_list(self):
+        resp = self.one(self.rpc(10, 'resources/templates/list'))
+        templates = resp['result']['resourceTemplates']
+        self.assertEqual(len(templates), 4)
+        self.assertIn('translate-book://temp/{temp_path}/manifest',
+                      [t['uriTemplate'] for t in templates])
+
     def test_resources_list_and_read_manifest(self):
         listing = self.one(self.rpc(11, 'resources/list'))
         uris = [r['uri'] for r in listing['result']['resources']]
-        self.assertIn(f'translate-book://temp/book_temp/manifest', uris)
+        self.assertIn('translate-book://temp/book_temp/manifest', uris)
 
         read = self.one(self.rpc(12, 'resources/read', {
             'uri': 'translate-book://temp/book_temp/manifest',
         }))
         self.assertEqual(read['result']['contents'][0]['mimeType'],
-                         'text/plain; charset=utf-8')
+                         'application/json')
+        body = json.loads(read['result']['contents'][0]['text'])
+        self.assertEqual(body['chunk_count'], 1)
+
+    def test_resources_list_and_read_nested_temp_dir(self):
+        nested = self.root / 'artifacts' / 'nested dir' / 'книга_temp'
+        nested.mkdir(parents=True)
+        (nested / 'chunk0001.md').write_text('Вложенный текст.', encoding='utf-8')
+        (nested / 'input.md').write_text('combined', encoding='utf-8')
+        manifest.create_manifest(str(nested), ['chunk0001.md'],
+                                 str(nested / 'input.md'))
+
+        listing = self.one(self.rpc(20, 'resources/list'))
+        uris = [r['uri'] for r in listing['result']['resources']]
+        uri = ('translate-book://temp/artifacts/nested%20dir/'
+               '%D0%BA%D0%BD%D0%B8%D0%B3%D0%B0_temp/manifest')
+        self.assertIn(uri, uris)
+
+        read = self.one(self.rpc(21, 'resources/read', {'uri': uri}))
         body = json.loads(read['result']['contents'][0]['text'])
         self.assertEqual(body['chunk_count'], 1)
 
@@ -189,6 +224,18 @@ class ServerTestCase(unittest.TestCase):
             'uri': 'translate-book://temp/book_temp/chunks/chunk0001',
         }))
         self.assertEqual(read['result']['contents'][0]['text'], 'Source text.')
+        self.assertEqual(read['result']['contents'][0]['mimeType'],
+                         'text/markdown; charset=utf-8')
+
+    def test_resources_read_rejects_temp_path_escape(self):
+        for uri in (
+            'translate-book://temp/../book_temp/manifest',
+            'translate-book://temp/%2E%2E/book_temp/manifest',
+            'translate-book://temp/book_temp/../book_temp/manifest',
+        ):
+            with self.subTest(uri=uri):
+                resp = self.one(self.rpc(22, 'resources/read', {'uri': uri}))
+                self.assertEqual(resp['error']['code'], -32602)
 
     def test_resources_read_unknown_uri(self):
         resp = self.one(self.rpc(14, 'resources/read', {'uri': 'translate-book://x'}))

@@ -26,6 +26,7 @@
 - `translate_book_mcp/` — MCP server package: `paths.py` (workspace confinement), `prompts.py` (translation prompt templates), `tools.py` (convert/plan/prompt/submit/merge/validate/build), `server.py` (stdlib JSON-RPC 2.0 loop — no MCP SDK)
 - `scripts/calibre_html_publish.py` — Calibre format conversion wrapper
 - `scripts/template.html`, `scripts/template_ebook.html` — HTML templates
+- `opencode.json` — project-local OpenCode V2 MCP config (auto-connects the stdio server)
 
 ## Agent-specific adaptations
 
@@ -91,7 +92,7 @@ python tests/integration_smoke.py
 
 ## Known issues (Windows-specific)
 
-- Calibre installs `ebook-convert.exe` to `C:\Program Files\Calibre2\` — ensure it's in PATH
+- Calibre installs `ebook-convert.exe` to `C:\Program Files\Calibre2\` — `find_calibre_convert()` checks that default location; otherwise add Calibre to PATH
 - `python` in git-bash may point to Hermes venv (`.../hermes-agent/venv/Scripts/python`) — install pypandoc there or use system Python directly
 - Pandoc installs to `C:\Users\<user>\AppData\Local\Pandoc\` — ensure it's in PATH
 - Unit tests pass from repo root (`python -m unittest discover -s tests -p 'test_*.py'`) — run from the repo root directory with proper `PYTHONPATH`

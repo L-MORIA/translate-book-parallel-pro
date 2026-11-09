@@ -17,6 +17,29 @@ if str(SCRIPT_DIR) not in sys.path:
 import calibre_html_publish  # noqa: E402
 
 
+class FindCalibreConvertTests(unittest.TestCase):
+    def test_windows_default_install_is_checked(self):
+        calls = []
+
+        def fake_run(cmd, capture_output, text, timeout, **kwargs):
+            calls.append(cmd[0])
+            return mock.Mock(returncode=1)
+
+        expected = os.path.join(
+            r'C:\Program Files', 'Calibre2', 'ebook-convert.exe',
+        )
+        with mock.patch.object(calibre_html_publish.os, 'name', 'nt'), \
+                mock.patch.dict(calibre_html_publish.os.environ,
+                                {'ProgramFiles': r'C:\Program Files'},
+                                clear=False), \
+                mock.patch.object(calibre_html_publish.subprocess, 'run',
+                                  side_effect=fake_run), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertIsNone(calibre_html_publish.find_calibre_convert())
+
+        self.assertIn(expected, calls)
+
+
 class ConvertHtmlWithCalibreTests(unittest.TestCase):
     def test_builds_expected_epub_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -140,21 +140,35 @@ The same server command is registered once per host; every MCP-capable agent
 then drives the pipeline with zero repo edits. Start it from the repository
 root so `--workspace .` matches the project.
 
-**OpenCode** — add a `mcp` section to the project `opencode.json` (or the
-global `~/.config/opencode/opencode.json`):
+**OpenCode V2** — the quickest path is the CLI, run from the repository root:
+
+```bash
+opencode mcp add translate-book -- python scripts/mcp_server.py --workspace .
+opencode mcp list          # must print: ✓ translate-book  connected
+```
+
+Add `--global` to make it available in every project. The CLI writes the
+server under `mcp.servers`; the equivalent hand-written config is:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "translate-book": {
-      "type": "local",
-      "command": ["python", "scripts/mcp_server.py", "--workspace", "."],
-      "enabled": true
+    "servers": {
+      "translate-book": {
+        "type": "local",
+        "command": ["python", "scripts/mcp_server.py", "--workspace", "."]
+      }
     }
   }
 }
 ```
+
+OpenCode V2 ignores the V1 shape (`"mcp": {"translate-book": {...}}` with
+`"enabled": true`) — that was a documentation bug in v1.3.0–v1.3.2. Use
+`"disabled": true` to keep a server configured but disconnected. Code Mode is
+on by default (the agent calls `tools.translate_book.*` inside `execute`); set
+`"codemode": false` on the server to expose the tools in the native tool list.
 
 **ZCode** — add the server to the workspace config `<repo>/.zcode/config.json`
 (user scope: `~/.zcode/cli/config.json`); workspace-scoped servers are trusted

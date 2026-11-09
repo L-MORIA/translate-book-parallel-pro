@@ -149,7 +149,8 @@ and any other MCP-capable agent; headless orchestration and installable host
 adapters are the intermediate steps.
 
 The **MCP server MVP is implemented (v1.3.0)** — stdio, stdlib-only JSON-RPC,
-no SDK dependency:
+no SDK dependency. Transport hardening, resource templates and a live OpenCode
+V2 verification landed in v1.3.3:
 
 ```bash
 python scripts/mcp_server.py --workspace /path/to/books

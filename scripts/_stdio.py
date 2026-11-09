@@ -12,9 +12,12 @@ the same on every platform and locale.
 import sys
 
 
-def configure_utf8_stdio(include_stdin=False):
+def configure_utf8_stdio(include_stdin=False, errors=None):
     """Reconfigure the standard streams to UTF-8 when possible.
 
+    ``errors`` overrides the stream error handler. Pass ``'strict'`` for
+    stdio servers that must reject invalid UTF-8 instead of silently
+    producing lone surrogates (the default on Windows for redirected stdin).
     Streams without ``reconfigure`` (e.g. StringIO in tests) and streams that
     cannot be reconfigured (detached or already written to) are left as-is.
     """
@@ -25,7 +28,10 @@ def configure_utf8_stdio(include_stdin=False):
         reconfigure = getattr(stream, 'reconfigure', None)
         if reconfigure is None:
             continue
+        kwargs = {'encoding': 'utf-8'}
+        if errors is not None:
+            kwargs['errors'] = errors
         try:
-            reconfigure(encoding='utf-8')
+            reconfigure(**kwargs)
         except (ValueError, OSError):
             pass

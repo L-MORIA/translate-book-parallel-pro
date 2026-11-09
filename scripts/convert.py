@@ -32,8 +32,19 @@ def find_calibre_convert():
         "/Applications/calibre.app/Contents/MacOS/ebook-convert",
         "/usr/bin/ebook-convert",
         "/usr/local/bin/ebook-convert",
-        "ebook-convert"  # If in PATH
     ]
+    if os.name == 'nt':
+        # Calibre's Windows installer does not add itself to PATH.
+        program_files = os.environ.get('ProgramFiles', r'C:\Program Files')
+        possible_paths.append(
+            os.path.join(program_files, 'Calibre2', 'ebook-convert.exe')
+        )
+        program_files_x86 = os.environ.get('ProgramFiles(x86)')
+        if program_files_x86:
+            possible_paths.append(
+                os.path.join(program_files_x86, 'Calibre2', 'ebook-convert.exe')
+            )
+    possible_paths.append("ebook-convert")  # If in PATH
 
     for path in possible_paths:
         try:

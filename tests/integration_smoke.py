@@ -8,7 +8,7 @@ the LLM stage stays out of CI) -> merge validation -> HTML conversion ->
 TOC insertion.
 
 Run: python tests/integration_smoke.py
-Requires ebook-convert (Calibre) and pandoc on PATH.
+Requires Calibre (PATH or the default Windows install) and pandoc on PATH.
 Set SMOKE_FORMATS=1 to also exercise DOCX/EPUB/PDF generation (slow).
 """
 import json
@@ -24,6 +24,10 @@ BASELINE = REPO / "tests" / "baselines" / "sleepy-hollow" / "sleepy-hollow.epub"
 ARTIFACTS = REPO / "tests" / ".artifacts"
 TEMP_DIR = ARTIFACTS / "sleepy-hollow_temp"
 
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+import convert  # noqa: E402
+
 
 def fail(message):
     print(f"\nSMOKE FAIL: {message}")
@@ -31,12 +35,7 @@ def fail(message):
 
 
 def calibre_available():
-    try:
-        return subprocess.run(
-            ["ebook-convert", "--version"], capture_output=True
-        ).returncode == 0
-    except FileNotFoundError:
-        return False
+    return convert.find_calibre_convert() is not None
 
 
 def main():

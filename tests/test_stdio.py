@@ -84,6 +84,20 @@ class ConfigureUtf8StdioTests(unittest.TestCase):
                 mock.patch.object(sys, "stderr", StringStream()):
             _stdio.configure_utf8_stdio()  # must not raise
 
+    def test_errors_override_is_forwarded(self):
+        class FakeStream:
+            def __init__(self):
+                self.kwargs = None
+
+            def reconfigure(self, **kwargs):
+                self.kwargs = kwargs
+
+        stdin = FakeStream()
+        with mock.patch.object(sys, "stdin", stdin):
+            _stdio.configure_utf8_stdio(include_stdin=True, errors="strict")
+
+        self.assertEqual(stdin.kwargs, {"encoding": "utf-8", "errors": "strict"})
+
 
 class CliUtf8RegressionTests(unittest.TestCase):
     """Windows pipes default to cp1251; the CLIs must still emit UTF-8."""
@@ -142,6 +156,52 @@ class CliUtf8RegressionTests(unittest.TestCase):
             glossary = json.loads(Path(temp_dir, "glossary.json").read_text(encoding="utf-8"))
             brouwer = next(t for t in glossary["terms"] if t["source"] == "Brouwer")
             self.assertEqual(brouwer["target"], "Брауэр")
+
+
+class McpStdioUtf8RegressionTests(unittest.TestCase):
+    """The MCP server must read UTF-8 JSON-RPC even when the pipe is cp1251."""
+
+    def test_cyrillic_submit_through_cp1251_stdin(self):
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "cp1251"
+        env.pop("PYTHONUTF8", None)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            book = Path(temp_dir, "book_temp")
+            book.mkdir()
+            write_text(book, "chunk0001.md", "Ichabod Crane was here.\n")
+
+            request = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "submit_translation",
+                    "arguments": {
+                        "temp_dir": str(book),
+                        "chunk_id": "chunk0001",
+                        "content": "Икабод Крейн был здесь.\n",
+                    },
+                },
+            }
+            proc = subprocess.run(
+                [sys.executable, str(SCRIPT_DIR / "mcp_server.py"),
+                 "--workspace", temp_dir],
+                input=json.dumps(request, ensure_ascii=False).encode("utf-8"),
+                capture_output=True,
+                env=env,
+                timeout=120,
+            )
+
+            self.assertEqual(proc.returncode, 0,
+                             proc.stderr.decode("utf-8", "replace"))
+            responses = [json.loads(line)
+                         for line in proc.stdout.decode("utf-8").splitlines()]
+            self.assertEqual(len(responses), 1, responses)
+            self.assertNotIn("error", responses[0], responses[0])
+            self.assertFalse(responses[0]["result"]["isError"])
+
+            output = Path(book, "output_chunk0001.md").read_text(encoding="utf-8")
+            self.assertEqual(output, "Икабод Крейн был здесь.\n")
 
 
 if __name__ == "__main__":

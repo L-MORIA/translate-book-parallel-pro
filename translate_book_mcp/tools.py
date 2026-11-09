@@ -111,7 +111,7 @@ def convert_book(ws, args):
 
     argv = ['convert.py', input_path,
             '-l', str(args.get('input_lang', 'auto')),
-            '--olang', str(args.get('output_lang', 'ru')),
+            '--olang', str(args.get('output_lang', 'zh')),
             '--temp-root', str(resolved_root)]
     chunk_size = args.get('chunk_size')
     if chunk_size:

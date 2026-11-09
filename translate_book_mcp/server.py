@@ -12,15 +12,17 @@ tools.py and never reach the protocol stream.
 """
 
 import json
+import os
 import sys
+import urllib.parse
 from pathlib import Path
 
 from . import tools as tool_mod
-from .paths import PathError, Workspace
+from .paths import CHUNK_ID_RE, PathError, Workspace
 
 PROTOCOL_VERSION = '2024-11-05'
 SERVER_NAME = 'translate-book-parallel-pro'
-SERVER_VERSION = '1.3.0'
+SERVER_VERSION = '1.3.3'
 
 MAX_LINE_BYTES = 64 * 1024 * 1024  # a full book never crosses the wire; cap anyway
 
@@ -42,7 +44,7 @@ TOOL_DEFS = [
             'required': ['input_file'],
             'properties': {
                 'input_file': {'type': 'string', 'description': 'path inside the workspace'},
-                'output_lang': {'type': 'string', 'description': 'target language code (default ru)'},
+                'output_lang': {'type': 'string', 'description': 'target language code (default zh, same as convert.py)'},
                 'input_lang': {'type': 'string', 'description': 'source language (default auto)'},
                 'chunk_size': {'type': 'integer', 'description': 'target chunk size in characters'},
                 'temp_root': {'type': 'string', 'description': 'where to create {book}_temp (default workspace root)'},
@@ -173,6 +175,47 @@ PROMPT_DEFS = [
 
 RESOURCE_KINDS = ('glossary', 'manifest')
 
+# Directories that never contain book temp dirs and can be huge; `tests/
+# .artifacts` is deliberately not here — that is where test books live.
+_WALK_SKIP = {
+    '.git', '.hg', '.svn', '.idea', '.vscode', '.tox', '.venv', 'venv',
+    'node_modules', '__pycache__', '.mypy_cache', '.pytest_cache',
+    '.ruff_cache',
+}
+
+RESOURCE_TEMPLATES = [
+    {
+        'uriTemplate': 'translate-book://temp/{temp_path}/glossary',
+        'name': 'Glossary',
+        'description': (
+            'Term glossary JSON for a temp book directory. {temp_path} is a '
+            'workspace-relative path; slashes may be percent-encoded.'
+        ),
+        'mimeType': 'application/json',
+    },
+    {
+        'uriTemplate': 'translate-book://temp/{temp_path}/manifest',
+        'name': 'Manifest',
+        'description': (
+            'Chunk manifest JSON for a temp book directory. {temp_path} is a '
+            'workspace-relative path; slashes may be percent-encoded.'
+        ),
+        'mimeType': 'application/json',
+    },
+    {
+        'uriTemplate': 'translate-book://temp/{temp_path}/chunks/{chunk_id}',
+        'name': 'Source chunk',
+        'description': 'One source markdown chunk',
+        'mimeType': 'text/markdown',
+    },
+    {
+        'uriTemplate': 'translate-book://temp/{temp_path}/output/{chunk_id}',
+        'name': 'Translated chunk',
+        'description': 'One translated markdown chunk',
+        'mimeType': 'text/markdown',
+    },
+]
+
 
 # ---------------------------------------------------------------------------
 # handlers
@@ -195,48 +238,81 @@ def _tool_dispatch(ws, name, arguments):
     return impl(ws, arguments or {})
 
 
+def _decode_temp_parts(ws, parts):
+    """Validate decoded URI path components and resolve the temp directory."""
+    if not parts:
+        raise KeyError('empty temp path')
+    for part in parts:
+        if part in ('', '.', '..') or '\\' in part or ':' in part or '\x00' in part:
+            raise PathError(f'Invalid temp path component: {part!r}')
+    temp_dir = ws.resolve_dir('/'.join(parts))
+    if not temp_dir.name.endswith('_temp'):
+        raise PathError(
+            f"Resource temp directory must end with '_temp': {temp_dir.name}"
+        )
+    return temp_dir
+
+
 def _read_resource(ws, uri):
     import re
     chunk_id_re = re.compile(r'^chunk\d{4}$')
     prefix = 'translate-book://temp/'
     if not uri.startswith(prefix):
         raise KeyError(uri)
-    parts = uri[len(prefix):].split('/')
-    if len(parts) == 2 and parts[1] in RESOURCE_KINDS:
-        temp_id, kind = parts
-        temp_dir = ws.temp_dir(temp_id)
+    # Decoding the whole tail also accepts clients that percent-encode the
+    # slashes of a nested temp path (RFC 6570 simple expansion).
+    parts = urllib.parse.unquote(uri[len(prefix):]).split('/')
+    if len(parts) >= 2 and parts[-1] in RESOURCE_KINDS:
+        temp_parts, kind = parts[:-1], parts[-1]
+        temp_dir = _decode_temp_parts(ws, temp_parts)
         path = Path(temp_dir) / f'{kind}.json'
-    elif len(parts) == 3 and parts[1] in ('chunks', 'output'):
+        mime = 'application/json'
+    elif len(parts) >= 3 and parts[-2] in ('chunks', 'output'):
         # ROADMAP resource shape: .../chunks/{chunk_id} and .../output/{chunk_id}
-        temp_id, kind, ref = parts
-        temp_dir = ws.temp_dir(temp_id)
-        if chunk_id_re.match(ref):
-            name = ref if kind == 'chunks' else f'output_{ref}'
-            name = f'{name}.md'
-        else:
-            name = ref
+        temp_parts, kind, ref = parts[:-2], parts[-2], parts[-1]
+        temp_dir = _decode_temp_parts(ws, temp_parts)
+        if not chunk_id_re.match(ref):
+            raise PathError(f'Expected chunk id like chunk0001, got {ref!r}')
+        name = f'{ref}.md' if kind == 'chunks' else f'output_{ref}.md'
         path = ws.chunk_file(
             temp_dir, name, kind='source' if kind == 'chunks' else 'output',
         )
+        mime = 'text/markdown; charset=utf-8'
     else:
         raise KeyError(uri)
     if not path.is_file():
         raise FileNotFoundError(str(path))
-    return path.read_text(encoding='utf-8')
+    return path.read_text(encoding='utf-8'), mime
+
+
+def _iter_temp_dirs(root):
+    """Yield every `*_temp` directory under the workspace, nested included."""
+    for dirpath, dirnames, _filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _WALK_SKIP)
+        current = Path(dirpath)
+        if current != root and current.name.endswith('_temp'):
+            dirnames[:] = []  # a book temp dir can hold thousands of images
+            yield current
 
 
 def _list_resources(ws):
     """Enumerate temp dirs under the workspace root; large content stays on disk."""
     items = []
-    for temp_dir in sorted(ws.root.glob('*_temp')):
-        if not temp_dir.is_dir():
+    for temp_dir in _iter_temp_dirs(ws.root):
+        try:
+            # Resolving rejects a `*_temp` symlink that points outside the root.
+            temp_dir = ws.resolve_dir(str(temp_dir))
+        except PathError:
             continue
-        tid = temp_dir.name
+        rel = temp_dir.relative_to(ws.root)
+        temp_path = '/'.join(
+            urllib.parse.quote(part, safe='') for part in rel.parts
+        )
         for kind in RESOURCE_KINDS:
             if (temp_dir / f'{kind}.json').is_file():
                 items.append({
-                    'uri': f'translate-book://temp/{tid}/{kind}',
-                    'name': f'{tid}/{kind}',
+                    'uri': f'translate-book://temp/{temp_path}/{kind}',
+                    'name': f'{rel.as_posix()}/{kind}',
                     'mimeType': 'application/json',
                 })
     return items
@@ -249,6 +325,8 @@ def _get_prompt(ws, name, arguments):
     elif name == 'review_translation':
         temp_dir = str(ws.resolve_dir(arguments.get('temp_dir', '')))
         chunk_id = arguments.get('chunk_id', '')
+        if not CHUNK_ID_RE.match(chunk_id):
+            raise PathError(f'Expected chunk id like chunk0001, got {chunk_id!r}')
         lang = arguments.get('target_language', 'ru')
         text = tool_mod.prompts.build_review_prompt(
             source_path=str(Path(temp_dir) / f'{chunk_id}.md'),
@@ -317,10 +395,13 @@ def handle_message(state, msg):
     if method == 'resources/list':
         return {'id': msg_id, 'result': {'resources': _list_resources(state['workspace'])}}
 
+    if method == 'resources/templates/list':
+        return {'id': msg_id, 'result': {'resourceTemplates': RESOURCE_TEMPLATES}}
+
     if method == 'resources/read':
         uri = (msg.get('params') or {}).get('uri', '')
         try:
-            text = _read_resource(state['workspace'], uri)
+            text, mime = _read_resource(state['workspace'], uri)
         except KeyError:
             return _error(msg_id, -32602, f'Unknown resource URI: {uri}')
         except PathError as e:
@@ -330,7 +411,7 @@ def handle_message(state, msg):
         return {
             'id': msg_id,
             'result': {'contents': [
-                {'uri': uri, 'mimeType': 'text/plain; charset=utf-8', 'text': text},
+                {'uri': uri, 'mimeType': mime, 'text': text},
             ]},
         }
 
@@ -388,5 +469,9 @@ def serve(workspace_root, stdin=None, stdout=None):
                         resp = _error(msg.get('id'), -32603,
                                       f'internal error: {e}')
         if resp is not None:
+            # Every JSON-RPC response must carry the protocol marker. Strict
+            # clients (OpenCode V2) reject messages without it even when the
+            # payload is otherwise valid.
+            resp.setdefault('jsonrpc', '2.0')
             fout.write(json.dumps(resp, ensure_ascii=False) + '\n')
             fout.flush()

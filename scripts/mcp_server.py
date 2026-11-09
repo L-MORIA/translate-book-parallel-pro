@@ -25,7 +25,10 @@ from translate_book_mcp.server import SERVER_NAME, SERVER_VERSION, serve  # noqa
 
 
 def main():
-    configure_utf8_stdio()
+    # stdin matters as much as stdout here: Windows pipes default to the ANSI
+    # code page (cp1251 + surrogateescape), which corrupts UTF-8 JSON-RPC
+    # payloads such as Russian translations.
+    configure_utf8_stdio(include_stdin=True, errors='strict')
     parser = argparse.ArgumentParser(
         description=f'{SERVER_NAME} MCP server (stdio, JSON-RPC 2.0)',
     )

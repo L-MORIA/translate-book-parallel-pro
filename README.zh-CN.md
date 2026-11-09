@@ -247,7 +247,7 @@ python scripts/merge_and_build.py --temp-dir book_temp --title "《译后书名�
 
 ## 后续规划
 
-**MCP 服务器 MVP 已实现（v1.3.0）**：`python scripts/mcp_server.py --workspace <目录>`，通过 stdio 暴露 convert/plan/prompt/submit/merge/validate/build 八个工具；服务器自身不调用 LLM。详见 [ROADMAP.md](ROADMAP.md)。
+**MCP 服务器 MVP 已实现（v1.3.0）**：`python scripts/mcp_server.py --workspace <目录>`，通过 stdio 暴露 convert/plan/prompt/submit/merge/validate/build 八个工具；服务器自身不调用 LLM。v1.3.3 完成了传输层加固、资源模板和 OpenCode V2 实机验证。详见 [ROADMAP.md](ROADMAP.md)。
 
 跟踪 [issue #7](https://github.com/deusyu/translate-book/issues/7) — chunk 之间的人名/术语不一致以及代词/性别错误。当前流水线已覆盖高频实体、别名/拼写漂移、相邻 chunk 的代词上下文，以及术语表变更后的精确重译。整书自然度校验仍是后续质量阶段。整体方案分为四个可独立交付的阶段。
 

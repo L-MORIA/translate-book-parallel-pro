@@ -215,6 +215,21 @@ class ConvertBookTests(ToolsTestCase):
         # convert picks the newest *_temp dir — the one this run just made
         self.assertEqual(result['chunk_count'], 1)
 
+    def test_default_output_lang_matches_convert_cli(self):
+        (self.root / 'newbook_temp').mkdir()
+        manifest.create_manifest(
+            str(self.root / 'newbook_temp'), ['chunk0001.md'],
+            str(self.root / 'input.md'),
+        )
+        src = self.root / 'book.epub'
+        src.write_bytes(b'epub')
+        out = f'Temp directory: {self.root / "newbook_temp"}'
+        with mock.patch.object(tools, '_run_python',
+                               return_value=(0, out, '')) as run:
+            tools.convert_book(self.ws, {'input_file': str(src)})
+        argv = run.call_args.args[1:]
+        self.assertEqual(argv[argv.index('--olang') + 1], 'zh')
+
     def test_nonzero_exit_raises_clean_error(self):
         src = self.root / 'book.epub'
         src.write_bytes(b'epub')

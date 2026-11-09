@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "translate-book": {
+        "type": "local",
+        "command": [
+          "python",
+          "scripts/mcp_server.py",
+          "--workspace",
+          "."
+        ]
+      }
+    }
+  }
+}

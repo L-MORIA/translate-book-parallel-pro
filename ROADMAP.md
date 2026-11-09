@@ -6,7 +6,7 @@ One pipeline, any agent: OpenCode, Hermes, Claude Code, Codex, ZCode, MiniMax
 Code, Kimi, Cursor, plain CI. No forks of the translation logic, no duplicated
 prompt files, no per-host copy of the pipeline.
 
-## Current state (v1.3.0)
+## Current state (v1.3.3)
 
 - The core is portable: `scripts/*.py` is plain Python; prompts, glossary,
   manifest, run_state and meta schemas are host-independent.
@@ -23,6 +23,12 @@ prompt files, no per-host copy of the pipeline.
   library only — no MCP SDK dependency (open question 1 resolved in favor of
   stdlib JSON-RPC; the used surface — initialize/ping/tools/resources/prompts
   — is small and stable). M1–M3 done; M4 (packaging) and M5 (HTTP) remain.
+- **MCP transport hardened (v1.3.3)** after the first live OpenCode V2 run:
+  every response now carries `"jsonrpc": "2.0"` (strict clients rejected the
+  old frames), stdin is UTF-8 on Windows (cp1251 mangled Cyrillic translations),
+  `resources/templates/list` is implemented, nested temp dirs are discoverable
+  and readable through resources, and `convert_book` defaults to the same
+  target language as `convert.py` (`zh`).
 
 The remaining problem is integration, not translation. Every host still needs
 its own glue: a skill file, a sub-agent call, a batch size. The roadmap removes
@@ -76,13 +82,15 @@ calls an LLM, so it works with any model and any provider.
 
 ### MCP resources
 
-- `translate-book://temp/{temp_id}/glossary`
-- `translate-book://temp/{temp_id}/manifest`
-- `translate-book://temp/{temp_id}/chunks/{chunk_id}`
-- `translate-book://temp/{temp_id}/output/{chunk_id}`
+- `translate-book://temp/{temp_path}/glossary`
+- `translate-book://temp/{temp_path}/manifest`
+- `translate-book://temp/{temp_path}/chunks/{chunk_id}`
+- `translate-book://temp/{temp_path}/output/{chunk_id}`
 
-Large content stays on disk; tools exchange paths and small JSON, not whole
-books over JSON-RPC.
+`{temp_path}` is relative to the workspace root and may be nested
+(`tests/.artifacts/book_temp`); path components are percent-encoded. Large
+content stays on disk; tools exchange paths and small JSON, not whole books
+over JSON-RPC.
 
 ### MCP prompts
 
@@ -197,6 +205,7 @@ python scripts/translate_cli_workers.py --temp-dir <dir> \
 | **v1.2.16** | UTF-8 CLI fix, `AGENT_ADAPTER.md`, this roadmap |
 | **v1.2.17** | glossary CLI survives a missing glossary.json (found in a real run) |
 | **v1.3.0** ✅ | MCP server MVP (stdio, M1–M3), stdlib JSON-RPC, workspace confinement, 56 tests |
+| **v1.3.3** ✅ | MCP transport hardening: JSON-RPC marker, UTF-8 stdin, resource templates, nested temp resources; live OpenCode V2 run |
 | **v1.4.0** | Headless orchestrator, install script, adapter files |
 | **v1.5.0** | MCP HTTP transport, auth, Docker image |
 | **v2.0.0** | Unified CLI + MCP + all adapters, stable public tool schema |

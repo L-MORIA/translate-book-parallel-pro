@@ -960,6 +960,44 @@ class HtmlzExtractionTests(unittest.TestCase):
         self.assertIn("Warning", out.getvalue())
 
 
+class FindCalibreConvertTests(unittest.TestCase):
+    def test_windows_default_install_is_checked(self):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd[0])
+            return SimpleNamespace(returncode=1)
+
+        expected = os.path.join(
+            r'C:\Program Files', 'Calibre2', 'ebook-convert.exe',
+        )
+        with mock.patch.object(convert.os, 'name', 'nt'), \
+                mock.patch.dict(convert.os.environ,
+                                {'ProgramFiles': r'C:\Program Files'},
+                                clear=False), \
+                mock.patch.object(convert.subprocess, 'run', side_effect=fake_run), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertIsNone(convert.find_calibre_convert())
+
+        self.assertIn(expected, calls)
+
+    def test_path_lookup_still_runs_last(self):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd[0])
+            return SimpleNamespace(
+                returncode=0 if cmd[0] == 'ebook-convert' else 1,
+            )
+
+        with mock.patch.object(convert.os, 'name', 'posix'), \
+                mock.patch.object(convert.subprocess, 'run', side_effect=fake_run), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(convert.find_calibre_convert(), 'ebook-convert')
+
+        self.assertEqual(calls[-1], 'ebook-convert')
+
+
 class ConvertToHtmlzTests(unittest.TestCase):
     """convert_to_htmlz() shells out to Calibre; gate the outcomes with mocks."""
 
