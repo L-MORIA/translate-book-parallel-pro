@@ -15,7 +15,7 @@
 - **Added** configurable subprocess timeouts (`TRANSLATE_BOOK_MCP_CONVERT_TIMEOUT`, default 30 min; `TRANSLATE_BOOK_MCP_BUILD_TIMEOUT`, default 60 min; 1800 s for other scripts) and `_trim_logs` to keep tool responses inside a JSON-RPC frame
 - **Added** `Workspace.resolve_file()` for input books, `content_path` hand-off files and cover images with the same realpath confinement as directories
 - **Changed** `review_translation` now resolves its language from `config.txt` and reuses the shared `review_prompt` helper instead of a duplicated path/validation branch
-- **Tests**: +32 tool tests, +3 server tests and +2 path tests for the new behavior; full suite 523 tests green, `ruff check .` green
+- **Tests**: +32 tool tests, +3 server tests and +2 path tests for the new behavior; full suite 508 tests green after the 15 legacy prototype tests were removed (523 before removal), `ruff check .` green
 
 ## v1.3.3 — MCP transport hardening after the first live OpenCode V2 run (2026-11-09)
 
