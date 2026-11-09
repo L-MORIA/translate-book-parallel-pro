@@ -292,6 +292,18 @@
                 page-break-after: avoid;
             }
 
+            figure, .ill {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                margin: 14pt 0;
+                text-align: center;
+            }
+
+            figure img, .ill img {
+                max-width: 100% !important;
+                height: auto;
+            }
+
             img {
                 max-width: 100% !important;
                 page-break-inside: avoid;
